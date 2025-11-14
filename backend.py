@@ -1,16 +1,23 @@
 """
-AWS Spot Optimizer - Central Server Backend (FIXED v2.0.1)
+AWS Spot Optimizer - Central Server Backend (FIXED v2.0.2)
 ===========================================================
 Fixed all references from 'trigger' to 'event_trigger' to match schema
+Added dotenv loading for environment variables
+Added initialize_app() at module level for gunicorn compatibility
 
 CHANGES:
+- Line ~14: Added dotenv loading
 - Line ~1144: Fixed get_global_stats() to use event_trigger
 - Line ~1319: Fixed get_switch_history() to use event_trigger
+- Line ~1597: Added initialize_app() call at module level (for gunicorn)
 - All SQL queries now correctly reference the event_trigger column
 """
 
 import os
 import json
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file
+
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1553,7 +1560,7 @@ def health_check():
 def initialize_app():
     """Initialize application on startup"""
     logger.info("="*80)
-    logger.info("AWS Spot Optimizer - Central Server Starting (FIXED v2.0.1)")
+    logger.info("AWS Spot Optimizer - Central Server Starting (FIXED v2.0.2)")
     logger.info("="*80)
     
     # Initialize connection pool
@@ -1582,6 +1589,8 @@ def initialize_app():
     logger.info(f"Listening on {config.HOST}:{config.PORT}")
     logger.info("="*80)
     logger.info("FIXES APPLIED:")
+    logger.info("  ✓ Added dotenv loading for environment variables")
+    logger.info("  ✓ Added initialize_app() at module level (for gunicorn)")
     logger.info("  ✓ All 'trigger' references changed to 'event_trigger'")
     logger.info("  ✓ Admin stats query fixed (line ~1144)")
     logger.info("  ✓ Switch history export fixed (line ~1319)")
@@ -1591,6 +1600,9 @@ def initialize_app():
 # ==============================================================================
 # MAIN
 # ==============================================================================
+
+# Initialize on import (for gunicorn)
+initialize_app()
 
 if __name__ == '__main__':
     initialize_app()
