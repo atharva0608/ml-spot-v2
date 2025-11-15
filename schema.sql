@@ -535,6 +535,50 @@ LEFT JOIN spot_price_snapshots sps ON sps.pool_id = sp.id
   AND sps.captured_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
 GROUP BY sp.id, sp.instance_type, sp.region, sp.az;
 
+-- View: Global instance summary (for admin dashboard)
+CREATE OR REPLACE VIEW v_global_instance_summary AS
+SELECT 
+    i.id,
+    i.client_id,
+    c.name as client_name,
+    i.instance_type,
+    i.region,
+    i.az,
+    i.current_mode,
+    i.current_pool_id,
+    i.spot_price,
+    i.ondemand_price,
+    i.is_active,
+    i.last_switch_at,
+    TIMESTAMPDIFF(HOUR, i.installed_at, NOW()) as uptime_hours,
+    (SELECT COUNT(*) FROM switch_events se 
+     WHERE se.old_instance_id = i.id OR se.new_instance_id = i.id) as total_switches
+FROM instances i
+JOIN clients c ON c.id = i.client_id;
+
+-- View: Agent health summary (for monitoring)
+CREATE OR REPLACE VIEW v_agent_health_summary AS
+SELECT 
+    a.id,
+    a.client_id,
+    c.name as client_name,
+    a.status,
+    a.enabled,
+    a.auto_switch_enabled,
+    a.auto_terminate_enabled,
+    a.last_heartbeat,
+    a.instance_count,
+    a.agent_version,
+    a.hostname,
+    TIMESTAMPDIFF(MINUTE, a.last_heartbeat, NOW()) as minutes_since_heartbeat,
+    CASE 
+        WHEN TIMESTAMPDIFF(MINUTE, a.last_heartbeat, NOW()) < 5 THEN 'healthy'
+        WHEN TIMESTAMPDIFF(MINUTE, a.last_heartbeat, NOW()) < 10 THEN 'warning'
+        ELSE 'critical'
+    END as health_status
+FROM agents a
+JOIN clients c ON c.id = a.client_id;
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================
