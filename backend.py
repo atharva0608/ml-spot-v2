@@ -1530,6 +1530,245 @@ def get_recent_activity():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
+# NEW ADMIN ENDPOINTS FOR FUNCTIONAL PAGES
+# ==============================================================================
+
+@app.route('/api/admin/system-health', methods=['GET'])
+def get_system_health():
+    """Get detailed system health information"""
+    try:
+        # Check database connection
+        db_status = 'Connected'
+        try:
+            execute_query("SELECT 1", fetch_one=True)
+        except:
+            db_status = 'Disconnected'
+        
+        # Check decision engine
+        engine_status = 'Loaded' if decision_engine and decision_engine.is_loaded() else 'Not Loaded'
+        
+        # Get connection pool stats
+        pool_active = connection_pool._cnx_queue.qsize() if connection_pool else 0
+        
+        return jsonify({
+            'apiStatus': 'Healthy',
+            'database': db_status,
+            'decisionEngine': engine_status,
+            'connectionPool': f'{pool_active}/{config.DB_POOL_SIZE}',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"System health check error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/pool-statistics', methods=['GET'])
+def get_pool_statistics():
+    """Get statistics for all spot pools"""
+    try:
+        stats = execute_query("""
+            SELECT 
+                sp.id,
+                sp.instance_type,
+                sp.region,
+                sp.az,
+                COUNT(sps.id) as sample_count,
+                MIN(sps.price) as min_price,
+                MAX(sps.price) as max_price,
+                AVG(sps.price) as avg_price,
+                MAX(sps.captured_at) as last_capture
+            FROM spot_pools sp
+            LEFT JOIN spot_price_snapshots sps ON sps.pool_id = sp.id
+                AND sps.captured_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            GROUP BY sp.id, sp.instance_type, sp.region, sp.az
+            ORDER BY sp.instance_type, sp.region, sp.az
+        """, fetch=True)
+        
+        return jsonify([{
+            'poolId': s['id'],
+            'instanceType': s['instance_type'],
+            'region': s['region'],
+            'az': s['az'],
+            'sampleCount': s['sample_count'] or 0,
+            'minPrice': float(s['min_price'] or 0),
+            'maxPrice': float(s['max_price'] or 0),
+            'avgPrice': float(s['avg_price'] or 0),
+            'lastCapture': s['last_capture'].isoformat() if s['last_capture'] else None
+        } for s in stats])
+    except Exception as e:
+        logger.error(f"Pool statistics error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/agent-health', methods=['GET'])
+def get_agent_health():
+    """Get health status of all agents"""
+    try:
+        agents = execute_query("""
+            SELECT 
+                a.id,
+                a.client_id,
+                c.name as client_name,
+                a.status,
+                a.enabled,
+                a.last_heartbeat,
+                a.instance_count,
+                a.agent_version,
+                TIMESTAMPDIFF(MINUTE, a.last_heartbeat, NOW()) as minutes_since_heartbeat
+            FROM agents a
+            JOIN clients c ON c.id = a.client_id
+            ORDER BY a.last_heartbeat DESC
+        """, fetch=True)
+        
+        return jsonify([{
+            'id': a['id'],
+            'clientId': a['client_id'],
+            'clientName': a['client_name'],
+            'status': a['status'],
+            'enabled': a['enabled'],
+            'lastHeartbeat': a['last_heartbeat'].isoformat() if a['last_heartbeat'] else None,
+            'instanceCount': a['instance_count'] or 0,
+            'agentVersion': a['agent_version'],
+            'minutesSinceHeartbeat': a['minutes_since_heartbeat'] or 0,
+            'healthy': a['minutes_since_heartbeat'] < 5 if a['minutes_since_heartbeat'] else False
+        } for a in agents])
+    except Exception as e:
+        logger.error(f"Agent health error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/agents', methods=['GET'])
+def get_all_agents_global():
+    """Get all agents across all clients"""
+    try:
+        agents = execute_query("""
+            SELECT 
+                a.*,
+                c.name as client_name
+            FROM agents a
+            JOIN clients c ON c.id = a.client_id
+            ORDER BY a.last_heartbeat DESC
+        """, fetch=True)
+        
+        return jsonify([{
+            'id': a['id'],
+            'clientId': a['client_id'],
+            'clientName': a['client_name'],
+            'status': a['status'],
+            'enabled': a['enabled'],
+            'lastHeartbeat': a['last_heartbeat'].isoformat() if a['last_heartbeat'] else None,
+            'instanceCount': a['instance_count'] or 0,
+            'agentVersion': a['agent_version'],
+            'hostname': a['hostname']
+        } for a in agents])
+    except Exception as e:
+        logger.error(f"Get all agents error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/instances', methods=['GET'])
+def get_all_instances_global():
+    """Get all instances across all clients with filters"""
+    status = request.args.get('status', 'all')
+    mode = request.args.get('mode', 'all')
+    search = request.args.get('search', '')
+    
+    try:
+        query = """
+            SELECT 
+                i.*,
+                c.name as client_name
+            FROM instances i
+            JOIN clients c ON c.id = i.client_id
+            WHERE 1=1
+        """
+        params = []
+        
+        if status == 'active':
+            query += " AND i.is_active = TRUE"
+        elif status == 'terminated':
+            query += " AND i.is_active = FALSE"
+        
+        if mode != 'all':
+            query += " AND i.current_mode = %s"
+            params.append(mode)
+        
+        if search:
+            query += " AND (i.id LIKE %s OR i.instance_type LIKE %s OR c.name LIKE %s)"
+            params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+        
+        query += " ORDER BY i.created_at DESC LIMIT 1000"
+        
+        instances = execute_query(query, tuple(params), fetch=True)
+        
+        return jsonify([{
+            'id': inst['id'],
+            'clientId': inst['client_id'],
+            'clientName': inst['client_name'],
+            'type': inst['instance_type'],
+            'region': inst['region'],
+            'az': inst['az'],
+            'mode': inst['current_mode'],
+            'poolId': inst['current_pool_id'] or 'n/a',
+            'spotPrice': float(inst['spot_price'] or 0),
+            'onDemandPrice': float(inst['ondemand_price'] or 0),
+            'isActive': inst['is_active']
+        } for inst in instances])
+    except Exception as e:
+        logger.error(f"Get all instances error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client/instances/<instance_id>/logs', methods=['GET'])
+def get_instance_logs(instance_id):
+    """Get activity logs for a specific instance"""
+    limit = int(request.args.get('limit', 50))
+    
+    try:
+        logs = execute_query("""
+            SELECT 
+                se.id,
+                se.timestamp,
+                se.event_trigger,
+                se.from_mode,
+                se.to_mode,
+                se.from_pool_id,
+                se.to_pool_id,
+                se.savings_impact,
+                'switch' as event_type
+            FROM switch_events se
+            WHERE se.old_instance_id = %s OR se.new_instance_id = %s
+            
+            UNION ALL
+            
+            SELECT 
+                rs.id,
+                rs.created_at as timestamp,
+                rs.recommended_action as event_trigger,
+                NULL as from_mode,
+                rs.recommended_mode as to_mode,
+                NULL as from_pool_id,
+                rs.recommended_pool_id as to_pool_id,
+                rs.expected_savings_per_hour as savings_impact,
+                'decision' as event_type
+            FROM risk_scores rs
+            WHERE rs.instance_id = %s
+            
+            ORDER BY timestamp DESC
+            LIMIT %s
+        """, (instance_id, instance_id, instance_id, limit), fetch=True)
+        
+        return jsonify([{
+            'id': log['id'],
+            'timestamp': log['timestamp'].isoformat(),
+            'eventType': log['event_type'],
+            'trigger': log['event_trigger'],
+            'fromMode': log['from_mode'],
+            'toMode': log['to_mode'],
+            'fromPool': log['from_pool_id'],
+            'toPool': log['to_pool_id'],
+            'savingsImpact': float(log['savings_impact'] or 0)
+        } for log in logs])
+    except Exception as e:
+        logger.error(f"Get instance logs error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
 # HEALTH CHECK
 # ==============================================================================
 
