@@ -1,16 +1,18 @@
 """
-AWS Spot Optimizer - Central Server Backend (FIXED v2.1.1)
+AWS Spot Optimizer - Central Server Backend (FIXED v2.2.0)
 ==============================================================
-Fixed all errors while maintaining 100% of features:
-- Fixed duplicate route definitions
-- Fixed duplicate decide endpoint implementation
-- Fixed missing closing parenthesis
-- Fixed schema column name mismatch (trigger → event_trigger)
-- All features from v2.1.0 preserved
+Added Client Management Features:
+- Create new clients with auto-generated tokens
+- Delete clients with cascade
+- Regenerate client tokens
+- View client tokens
+All previous features preserved from v2.1.1
 """
 
 import os
 import json
+import secrets
+import string
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -64,12 +66,12 @@ class Config:
 config = Config()
 
 # ==============================================================================
-# MODEL STATUS TRACKING (FIXED)
+# MODEL STATUS TRACKING
 # ==============================================================================
 
 model_status = {
-    'decision_engine_loaded': False,  # Lightweight decision logic
-    'ml_models_loaded': False         # Heavy ML models (if applicable)
+    'decision_engine_loaded': False,
+    'ml_models_loaded': False
 }
 
 # ==============================================================================
@@ -206,7 +208,21 @@ def create_notification(message, severity='info', client_id=None):
         logger.error(f"Failed to create notification: {e}")
 
 # ==============================================================================
-# DECISION ENGINE INITIALIZATION (FIXED STATUS TRACKING)
+# CLIENT TOKEN GENERATION HELPERS
+# ==============================================================================
+
+def generate_client_token():
+    """Generate a secure random client token"""
+    alphabet = string.ascii_letters + string.digits
+    random_part = ''.join(secrets.choice(alphabet) for _ in range(32))
+    return f"token-{random_part}"
+
+def generate_client_id():
+    """Generate a unique client ID"""
+    return f"client-{secrets.token_hex(4)}"
+
+# ==============================================================================
+# DECISION ENGINE INITIALIZATION
 # ==============================================================================
 
 decision_engine = None
@@ -224,14 +240,11 @@ def init_decision_engine():
         decision_engine = DecisionEngine(engine_config)
         decision_engine.load()
         
-        # Update status tracking
         model_status['decision_engine_loaded'] = True
         
-        # Check if ML models are actually loaded
         if hasattr(decision_engine, 'has_ml_models'):
             model_status['ml_models_loaded'] = decision_engine.has_ml_models()
         else:
-            # For rule-based engines, no ML models
             model_status['ml_models_loaded'] = (config.DECISION_ENGINE_TYPE == 'ml_based')
         
         logger.info(f"✓ Decision engine initialized: {config.DECISION_ENGINE_TYPE}")
@@ -338,9 +351,8 @@ def cleanup_old_data_job():
     except Exception as e:
         logger.error(f"Data cleanup job failed: {e}")
         log_system_event('cleanup_failed', 'error', str(e))
-
 # ==============================================================================
-# NEW NOTIFICATION ENDPOINTS
+# NOTIFICATION ENDPOINTS
 # ==============================================================================
 
 @app.route('/api/notifications', methods=['GET'])
@@ -412,7 +424,7 @@ def mark_all_notifications_read():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# ENHANCED SEARCH ENDPOINT
+# SEARCH ENDPOINT
 # ==============================================================================
 
 @app.route('/api/search', methods=['GET'])
@@ -430,7 +442,6 @@ def global_search():
             'agents': []
         }
         
-        # Search clients
         clients = execute_query("""
             SELECT id, name, status, total_savings
             FROM clients
@@ -445,7 +456,6 @@ def global_search():
             'status': c['status']
         } for c in clients]
         
-        # Search instances
         instances = execute_query("""
             SELECT i.id, i.instance_type, i.current_mode, c.name as client_name
             FROM instances i
@@ -461,7 +471,6 @@ def global_search():
             'client': i['client_name']
         } for i in instances]
         
-        # Search agents
         agents = execute_query("""
             SELECT a.id, a.status, c.name as client_name
             FROM agents a
@@ -484,14 +493,13 @@ def global_search():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# CLIENT STATISTICS WITH CHARTS DATA
+# CLIENT CHART DATA ENDPOINT
 # ==============================================================================
 
 @app.route('/api/client/<client_id>/stats/charts', methods=['GET'])
 def get_client_chart_data(client_id):
     """Get comprehensive chart data for client dashboard"""
     try:
-        # Monthly savings trend
         savings_trend = execute_query("""
             SELECT 
                 MONTHNAME(CONCAT(year, '-', month, '-01')) as month,
@@ -504,7 +512,6 @@ def get_client_chart_data(client_id):
             LIMIT 12
         """, (client_id,), fetch=True)
         
-        # Mode distribution
         mode_dist = execute_query("""
             SELECT 
                 current_mode,
@@ -514,7 +521,6 @@ def get_client_chart_data(client_id):
             GROUP BY current_mode
         """, (client_id,), fetch=True)
         
-        # Switch frequency over time (FIXED: event_trigger)
         switch_freq = execute_query("""
             SELECT 
                 DATE(timestamp) as date,
@@ -544,6 +550,194 @@ def get_client_chart_data(client_id):
         })
     except Exception as e:
         logger.error(f"Get chart data error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# NEW: CLIENT MANAGEMENT ENDPOINTS (CREATE, DELETE, TOKEN MANAGEMENT)
+# ==============================================================================
+
+@app.route('/api/admin/clients/create', methods=['POST'])
+def create_client():
+    """Create a new client with auto-generated token"""
+    data = request.json
+    
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Client name is required'}), 400
+    
+    client_name = data['name'].strip()
+    
+    if not client_name:
+        return jsonify({'error': 'Client name cannot be empty'}), 400
+    
+    if len(client_name) > 255:
+        return jsonify({'error': 'Client name too long (max 255 characters)'}), 400
+    
+    try:
+        # Check if client name already exists
+        existing = execute_query(
+            "SELECT id FROM clients WHERE name = %s",
+            (client_name,),
+            fetch_one=True
+        )
+        
+        if existing:
+            return jsonify({'error': f'Client with name "{client_name}" already exists'}), 409
+        
+        # Generate unique client ID and token
+        client_id = generate_client_id()
+        client_token = generate_client_token()
+        
+        # Ensure client ID is unique
+        id_exists = execute_query(
+            "SELECT id FROM clients WHERE id = %s",
+            (client_id,),
+            fetch_one=True
+        )
+        
+        if id_exists:
+            client_id = f"client-{secrets.token_hex(6)}"
+        
+        # Insert new client
+        execute_query("""
+            INSERT INTO clients (id, name, status, client_token, created_at, total_savings)
+            VALUES (%s, %s, 'active', %s, NOW(), 0.0000)
+        """, (client_id, client_name, client_token))
+        
+        # Create notification
+        create_notification(
+            f"New client created: {client_name}",
+            'info',
+            client_id
+        )
+        
+        # Log event
+        log_system_event('client_created', 'info', 
+                        f"Client {client_name} created", 
+                        client_id=client_id,
+                        metadata={'client_name': client_name})
+        
+        logger.info(f"✓ New client created: {client_name} ({client_id})")
+        
+        return jsonify({
+            'success': True,
+            'client': {
+                'id': client_id,
+                'name': client_name,
+                'token': client_token,
+                'status': 'active'
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Create client error: {e}")
+        log_system_event('client_creation_failed', 'error', str(e))
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/clients/<client_id>', methods=['DELETE'])
+def delete_client(client_id):
+    """Delete a client and all associated data (cascades)"""
+    try:
+        # Check if client exists
+        client = execute_query(
+            "SELECT id, name FROM clients WHERE id = %s",
+            (client_id,),
+            fetch_one=True
+        )
+        
+        if not client:
+            return jsonify({'error': 'Client not found'}), 404
+        
+        client_name = client['name']
+        
+        # Delete client (foreign keys cascade will handle related data)
+        execute_query("DELETE FROM clients WHERE id = %s", (client_id,))
+        
+        # Log the deletion (this won't have client_id since it's deleted)
+        log_system_event('client_deleted', 'warning', 
+                        f"Client {client_name} ({client_id}) deleted permanently",
+                        metadata={'deleted_client_id': client_id, 'deleted_client_name': client_name})
+        
+        logger.warning(f"⚠ Client deleted: {client_name} ({client_id})")
+        
+        return jsonify({
+            'success': True, 
+            'message': f"Client '{client_name}' and all associated data have been deleted"
+        })
+        
+    except Exception as e:
+        logger.error(f"Delete client error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/clients/<client_id>/regenerate-token', methods=['POST'])
+def regenerate_client_token(client_id):
+    """Regenerate client token (invalidates old token)"""
+    try:
+        # Check if client exists
+        client = execute_query(
+            "SELECT id, name FROM clients WHERE id = %s",
+            (client_id,),
+            fetch_one=True
+        )
+        
+        if not client:
+            return jsonify({'error': 'Client not found'}), 404
+        
+        # Generate new token
+        new_token = generate_client_token()
+        
+        # Update token in database
+        execute_query(
+            "UPDATE clients SET client_token = %s WHERE id = %s",
+            (new_token, client_id)
+        )
+        
+        # Create warning notification
+        create_notification(
+            f"API token regenerated for client: {client['name']}. All agents need to be updated with new token.",
+            'warning',
+            client_id
+        )
+        
+        # Log event
+        log_system_event('token_regenerated', 'warning', 
+                        f"Token regenerated for {client['name']}",
+                        client_id=client_id)
+        
+        logger.warning(f"⚠ Token regenerated for client: {client['name']} ({client_id})")
+        
+        return jsonify({
+            'success': True,
+            'token': new_token,
+            'message': 'Token regenerated successfully. Update all agents with the new token.'
+        })
+        
+    except Exception as e:
+        logger.error(f"Regenerate token error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/clients/<client_id>/token', methods=['GET'])
+def get_client_token(client_id):
+    """Get client token (for admin viewing)"""
+    try:
+        client = execute_query(
+            "SELECT client_token, name FROM clients WHERE id = %s",
+            (client_id,),
+            fetch_one=True
+        )
+        
+        if not client:
+            return jsonify({'error': 'Client not found'}), 404
+        
+        return jsonify({
+            'token': client['client_token'],
+            'client_name': client['name']
+        })
+        
+    except Exception as e:
+        logger.error(f"Get client token error: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
@@ -588,7 +782,6 @@ def register_agent():
             """, (agent_id, request.client_id, validated_data.get('hostname'), 
                   validated_data.get('agent_version')))
             
-            # Create notification for new agent
             create_notification(
                 f"New agent registered: {agent_id}",
                 'info',
@@ -686,7 +879,6 @@ def agent_heartbeat(agent_id):
     data = request.json
     
     try:
-        # Get previous status
         prev_status = execute_query("""
             SELECT status FROM agents WHERE id = %s
         """, (agent_id,), fetch_one=True)
@@ -704,7 +896,6 @@ def agent_heartbeat(agent_id):
             request.client_id
         ))
         
-        # Notify if agent went offline
         if prev_status and prev_status['status'] == 'online' and new_status == 'offline':
             create_notification(
                 f"Agent {agent_id} went offline",
@@ -799,14 +990,13 @@ def get_agent_config(agent_id):
 @app.route('/api/agents/<agent_id>/decide', methods=['POST'])
 @require_client_token
 def get_decision(agent_id):
-    """Get switching decision from decision engine (FULLY DECOUPLED)"""
+    """Get switching decision from decision engine"""
     data = request.json
     
     try:
         instance = data['instance']
         pricing = data['pricing']
         
-        # Get agent config
         config_data = execute_query("""
             SELECT ac.*, a.enabled, a.auto_switch_enabled
             FROM agent_configs ac
@@ -826,7 +1016,6 @@ def get_decision(agent_id):
                 'reason': 'Agent disabled'
             })
         
-        # Get switch history for policy enforcement
         recent_switches = execute_query("""
             SELECT COUNT(*) as count
             FROM switch_events
@@ -840,7 +1029,6 @@ def get_decision(agent_id):
             LIMIT 1
         """, (instance['instance_id'], instance['instance_id']), fetch_one=True)
         
-        # CALL DECISION ENGINE (DECOUPLED)
         decision = decision_engine.make_decision(
             instance=instance,
             pricing=pricing,
@@ -849,7 +1037,6 @@ def get_decision(agent_id):
             last_switch_time=last_switch['timestamp'] if last_switch else None
         )
         
-        # Store decision in database
         execute_query("""
             INSERT INTO risk_scores (
                 client_id, instance_id, agent_id, risk_score, recommended_action,
@@ -887,7 +1074,6 @@ def switch_report(agent_id):
         
         savings_impact = prices['old_spot'] - prices.get('new_spot', prices['on_demand'])
         
-        # FIXED: Using event_trigger instead of trigger
         execute_query("""
             INSERT INTO switch_events (
                 client_id, instance_id, agent_id, event_trigger,
@@ -941,7 +1127,6 @@ def switch_report(agent_id):
                 WHERE id = %s
             """, (hourly_savings, request.client_id))
         
-        # Create notification for switch
         create_notification(
             f"Instance switched: {new_inst['instance_id']} - Saved ${savings_impact:.4f}/hr",
             'info',
@@ -1002,7 +1187,6 @@ def mark_command_executed(agent_id):
     except Exception as e:
         logger.error(f"Mark command executed error: {e}")
         return jsonify({'error': str(e)}), 500
-
 # ==============================================================================
 # CLIENT DASHBOARD API ENDPOINTS
 # ==============================================================================
@@ -1250,7 +1434,6 @@ def force_instance_switch(instance_id):
             VALUES (%s, %s, %s, %s, NOW())
         """, (instance['agent_id'], instance_id, target_mode, target_pool_id))
         
-        # Create notification for manual switch
         create_notification(
             f"Manual switch queued for {instance_id}",
             'warning',
@@ -1272,10 +1455,6 @@ def force_instance_switch(instance_id):
         log_system_event('manual_switch_failed', 'error', str(e),
                         metadata={'instance_id': instance_id})
         return jsonify({'error': str(e)}), 500
-
-# ==============================================================================
-# AGENT CONFIGURATION & STATISTICS
-# ==============================================================================
 
 @app.route('/api/client/agents/<agent_id>/config', methods=['POST'])
 def update_agent_config(agent_id):
@@ -1439,6 +1618,78 @@ def get_instance_metrics(instance_id):
         logger.error(f"Get instance metrics error: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/client/<client_id>/savings', methods=['GET'])
+def get_client_savings(client_id):
+    """Get savings data for charts"""
+    range_param = request.args.get('range', 'monthly')
+    
+    try:
+        if range_param == 'monthly':
+            savings = execute_query("""
+                SELECT 
+                    CONCAT(MONTHNAME(CONCAT(year, '-', month, '-01'))) as name,
+                    baseline_cost as onDemandCost,
+                    actual_cost as modelCost,
+                    savings
+                FROM client_savings_monthly
+                WHERE client_id = %s
+                ORDER BY year DESC, month DESC
+                LIMIT 12
+            """, (client_id,), fetch=True)
+            
+            savings = list(reversed(savings)) if savings else []
+            
+            return jsonify([{
+                'name': s['name'],
+                'savings': float(s['savings']),
+                'onDemandCost': float(s['onDemandCost']),
+                'modelCost': float(s['modelCost'])
+            } for s in savings])
+        
+        return jsonify([])
+        
+    except Exception as e:
+        logger.error(f"Get savings error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/client/<client_id>/switch-history', methods=['GET'])
+def get_switch_history(client_id):
+    """Get switch history"""
+    instance_id = request.args.get('instance_id')
+    
+    try:
+        query = """
+            SELECT *
+            FROM switch_events
+            WHERE client_id = %s
+        """
+        params = [client_id]
+        
+        if instance_id:
+            query += " AND (old_instance_id = %s OR new_instance_id = %s)"
+            params.extend([instance_id, instance_id])
+        
+        query += " ORDER BY timestamp DESC LIMIT 100"
+        
+        history = execute_query(query, tuple(params), fetch=True)
+        
+        return jsonify([{
+            'id': h['id'],
+            'instanceId': h['new_instance_id'],
+            'timestamp': h['timestamp'].isoformat(),
+            'fromMode': h['from_mode'],
+            'toMode': h['to_mode'],
+            'fromPool': h['from_pool_id'] or 'n/a',
+            'toPool': h['to_pool_id'] or 'n/a',
+            'trigger': h['event_trigger'],
+            'price': float(h['new_spot_price'] or h['on_demand_price'] or 0),
+            'savingsImpact': float(h['savings_impact'] or 0)
+        } for h in history])
+        
+    except Exception as e:
+        logger.error(f"Get switch history error: {e}")
+        return jsonify({'error': str(e)}), 500
+
 # ==============================================================================
 # EXPORT ENDPOINTS (CSV DOWNLOADS)
 # ==============================================================================
@@ -1502,7 +1753,6 @@ def export_switch_history(client_id):
     from flask import Response
     
     try:
-        # FIXED: Using event_trigger instead of trigger
         history = execute_query("""
             SELECT 
                 timestamp,
@@ -1623,80 +1873,8 @@ def export_global_stats():
         logger.error(f"Export global stats error: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/client/<client_id>/savings', methods=['GET'])
-def get_client_savings(client_id):
-    """Get savings data for charts"""
-    range_param = request.args.get('range', 'monthly')
-    
-    try:
-        if range_param == 'monthly':
-            savings = execute_query("""
-                SELECT 
-                    CONCAT(MONTHNAME(CONCAT(year, '-', month, '-01'))) as name,
-                    baseline_cost as onDemandCost,
-                    actual_cost as modelCost,
-                    savings
-                FROM client_savings_monthly
-                WHERE client_id = %s
-                ORDER BY year DESC, month DESC
-                LIMIT 12
-            """, (client_id,), fetch=True)
-            
-            savings = list(reversed(savings)) if savings else []
-            
-            return jsonify([{
-                'name': s['name'],
-                'savings': float(s['savings']),
-                'onDemandCost': float(s['onDemandCost']),
-                'modelCost': float(s['modelCost'])
-            } for s in savings])
-        
-        return jsonify([])
-        
-    except Exception as e:
-        logger.error(f"Get savings error: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/client/<client_id>/switch-history', methods=['GET'])
-def get_switch_history(client_id):
-    """Get switch history"""
-    instance_id = request.args.get('instance_id')
-    
-    try:
-        query = """
-            SELECT *
-            FROM switch_events
-            WHERE client_id = %s
-        """
-        params = [client_id]
-        
-        if instance_id:
-            query += " AND (old_instance_id = %s OR new_instance_id = %s)"
-            params.extend([instance_id, instance_id])
-        
-        query += " ORDER BY timestamp DESC LIMIT 100"
-        
-        history = execute_query(query, tuple(params), fetch=True)
-        
-        return jsonify([{
-            'id': h['id'],
-            'instanceId': h['new_instance_id'],
-            'timestamp': h['timestamp'].isoformat(),
-            'fromMode': h['from_mode'],
-            'toMode': h['to_mode'],
-            'fromPool': h['from_pool_id'] or 'n/a',
-            'toPool': h['to_pool_id'] or 'n/a',
-            'trigger': h['event_trigger'],
-            'price': float(h['new_spot_price'] or h['on_demand_price'] or 0),
-            'savingsImpact': float(h['savings_impact'] or 0)
-        } for h in history])
-        
-    except Exception as e:
-        logger.error(f"Get switch history error: {e}")
-        return jsonify({'error': str(e)}), 500
-
 # ==============================================================================
-# ADMIN DASHBOARD API ENDPOINTS (FIXED MODEL STATUS)
+# ADMIN DASHBOARD API ENDPOINTS
 # ==============================================================================
 
 @app.route('/api/admin/stats', methods=['GET'])
@@ -1719,7 +1897,6 @@ def get_global_stats():
             LEFT JOIN switch_events se ON se.client_id = c.id
         """, fetch_one=True)
         
-        # FIXED: Properly report model status
         backend_health = 'Healthy'
         if not model_status['decision_engine_loaded']:
             backend_health = 'Decision Engine Not Loaded'
@@ -1798,7 +1975,10 @@ def get_recent_activity():
                 'switch_completed': 'switch',
                 'agent_registered': 'agent',
                 'manual_switch_requested': 'switch',
-                'savings_computed': 'event'
+                'savings_computed': 'event',
+                'client_created': 'event',
+                'client_deleted': 'event',
+                'token_regenerated': 'event'
             }
             
             activity.append({
@@ -1814,22 +1994,16 @@ def get_recent_activity():
         logger.error(f"Get activity error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# ==============================================================================
-# ADMIN FUNCTIONAL PAGES ENDPOINTS
-# ==============================================================================
-
 @app.route('/api/admin/system-health', methods=['GET'])
 def get_system_health():
     """Get detailed system health information"""
     try:
-        # Check database connection
         db_status = 'Connected'
         try:
             execute_query("SELECT 1", fetch_one=True)
         except:
             db_status = 'Disconnected'
         
-        # Check decision engine (FIXED)
         if model_status['decision_engine_loaded']:
             if model_status['ml_models_loaded']:
                 engine_status = 'Fully Loaded (ML Models Active)'
@@ -1838,7 +2012,6 @@ def get_system_health():
         else:
             engine_status = 'Not Loaded'
         
-        # Get connection pool stats
         pool_active = connection_pool._cnx_queue.qsize() if connection_pool else 0
         
         return jsonify({
@@ -2065,7 +2238,7 @@ def get_instance_logs(instance_id):
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# HEALTH CHECK (UPDATED)
+# HEALTH CHECK
 # ==============================================================================
 
 @app.route('/health', methods=['GET'])
@@ -2096,7 +2269,7 @@ def health_check():
 def initialize_app():
     """Initialize application on startup"""
     logger.info("="*80)
-    logger.info("AWS Spot Optimizer - Central Server Starting (FIXED v2.1.1)")
+    logger.info("AWS Spot Optimizer - Central Server Starting (v2.2.0)")
     logger.info("="*80)
     
     # Initialize connection pool
@@ -2126,11 +2299,12 @@ def initialize_app():
     logger.info(f"  - ML Models Loaded: {model_status['ml_models_loaded']}")
     logger.info(f"Listening on {config.HOST}:{config.PORT}")
     logger.info("="*80)
-    logger.info("FIXES IN v2.1.1:")
-    logger.info("  ✓ Fixed duplicate route definitions")
-    logger.info("  ✓ Fixed schema column name (trigger → event_trigger)")
-    logger.info("  ✓ Fixed missing closing parenthesis")
-    logger.info("  ✓ All features from v2.1.0 preserved")
+    logger.info("NEW FEATURES IN v2.2.0:")
+    logger.info("  ✓ Create new clients with auto-generated tokens")
+    logger.info("  ✓ Delete clients with cascade")
+    logger.info("  ✓ Regenerate client tokens")
+    logger.info("  ✓ View client tokens via API")
+    logger.info("  ✓ All previous features preserved")
     logger.info("="*80)
 
 # ==============================================================================
