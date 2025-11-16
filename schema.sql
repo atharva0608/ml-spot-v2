@@ -315,6 +315,24 @@ CREATE TABLE IF NOT EXISTS pending_switch_commands (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 COMMENT='Queue of pending switch operations for agents to execute';
 
+
+-- Notifications table: User notifications for important events
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  client_id VARCHAR(64) NULL,
+  message TEXT NOT NULL,
+  severity VARCHAR(16) NOT NULL DEFAULT 'info',
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+  INDEX idx_client_created (client_id, created_at DESC),
+  INDEX idx_read (is_read),
+  INDEX idx_severity (severity)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+COMMENT='User notifications for important events';
+
+
 -- ============================================================================
 -- SAMPLE DATA (Compatible with setup script)
 -- ============================================================================
