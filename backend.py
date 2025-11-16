@@ -839,16 +839,6 @@ def get_agent_config(agent_id):
         log_system_event('decision_error', 'error', str(e), 
                         request.client_id, agent_id, instance.get('instance_id'))
         return jsonify({'error': str(e)}), 500
-            return jsonify({
-                'instance_id': instance['instance_id'],
-                'risk_score': 0.0,
-                'recommended_action': 'stay',
-                'recommended_mode': instance['current_mode'],
-                'recommended_pool_id': instance.get('current_pool_id'),
-                'expected_savings_per_hour': 0.0,
-                'allowed': False,
-                'reason': 'Agent disabled'
-            })
         
         # Get switch history for policy enforcement
         recent_switches = execute_query("""
