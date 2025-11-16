@@ -325,7 +325,6 @@ const EmptyState = ({ icon, title, description }) => (
     {description && <p className="text-sm text-gray-500 mt-1 text-center px-4">{description}</p>}
   </div>
 );
-
 // ==============================================================================
 // NOTIFICATION PANEL
 // ==============================================================================
@@ -594,7 +593,7 @@ const SearchResultsPanel = ({ isOpen, onClose, query, onSelectResult }) => {
 };
 
 // ==============================================================================
-// SIDEBAR COMPONENT (UPDATED BRANDING)
+// SIDEBAR COMPONENT
 // ==============================================================================
 
 const AdminSidebar = ({ clients, onSelectClient, activeClientId, onSelectPage, activePage, isOpen, onClose }) => {
@@ -711,7 +710,7 @@ const AdminSidebar = ({ clients, onSelectClient, activeClientId, onSelectPage, a
 };
 
 // ==============================================================================
-// HEADER COMPONENT (WITH WORKING SEARCH AND NOTIFICATIONS)
+// HEADER COMPONENT
 // ==============================================================================
 
 const AdminHeader = ({ stats, onRefresh, lastRefresh, onMenuToggle }) => {
@@ -737,7 +736,6 @@ const AdminHeader = ({ stats, onRefresh, lastRefresh, onMenuToggle }) => {
 
   const handleSearchResultSelect = (type, id) => {
     console.log('Selected:', type, id);
-    // This can be enhanced to navigate to the specific resource
   };
 
   return (
@@ -842,7 +840,6 @@ const AdminHeader = ({ stats, onRefresh, lastRefresh, onMenuToggle }) => {
     </>
   );
 };
-
 // ==============================================================================
 // INSTANCE DETAIL PANEL WITH MANUAL CONTROLS
 // ==============================================================================
@@ -1315,10 +1312,8 @@ const ClientOverviewTab = ({ clientId }) => {
         />
       </div>
       
-      {/* Enhanced Charts Section */}
       {chartData && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Savings Trend Chart */}
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Savings Trend</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -1334,7 +1329,6 @@ const ClientOverviewTab = ({ clientId }) => {
             </ResponsiveContainer>
           </div>
 
-          {/* Mode Distribution Pie Chart */}
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Instance Mode Distribution</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -1359,7 +1353,6 @@ const ClientOverviewTab = ({ clientId }) => {
             </ResponsiveContainer>
           </div>
 
-          {/* Switch Frequency Chart */}
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Switch Frequency (30 Days)</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -1374,7 +1367,6 @@ const ClientOverviewTab = ({ clientId }) => {
             </ResponsiveContainer>
           </div>
 
-          {/* Cost Comparison Chart */}
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
             <h3 className="text-lg font-bold text-gray-900 mb-4">Monthly Cost Comparison</h3>
             <ResponsiveContainer width="100%" height={300}>
@@ -1488,7 +1480,6 @@ const ClientAgentsTab = ({ clientId }) => {
     try {
       await api.updateAgentSettings(agentId, { [setting]: !currentValue });
       
-      // Update local state immediately
       setAgents(prev => prev.map(agent => 
         agent.id === agentId 
           ? { ...agent, [setting]: !currentValue }
@@ -1496,7 +1487,7 @@ const ClientAgentsTab = ({ clientId }) => {
       ));
     } catch (error) {
       alert('Failed to update settings: ' + error.message);
-      await loadAgents(); // Reload on error
+      await loadAgents();
     }
   };
 
@@ -1608,7 +1599,6 @@ const ClientAgentsTab = ({ clientId }) => {
     </>
   );
 };
-
 const ClientInstancesTab = ({ clientId }) => {
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2148,7 +2138,7 @@ const ClientDetailView = ({ clientId, onBack }) => {
 };
 
 // ==============================================================================
-// ADMIN PAGES - FULLY FUNCTIONAL
+// ADMIN PAGES
 // ==============================================================================
 
 const AdminOverview = () => {
@@ -2355,9 +2345,6 @@ const AdminOverview = () => {
     </div>
   );
 };
-
-// Additional admin pages (AllClientsPage, AllAgentsPage, etc.) remain the same as before
-// but I'll include them for completeness
 
 const AllClientsPage = ({ onSelectClient }) => {
   const [clients, setClients] = useState([]);
@@ -2876,106 +2863,9 @@ const SystemHealthPage = () => {
   );
 };
 
-// Main App Component
-  const [agents, setAgents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  useEffect(() => {
-    const loadAgents = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getAllAgentsGlobal();
-        setAgents(data);
-      } catch (error) {
-        console.error('Failed to load agents:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadAgents();
-  }, []);
-
-  const filteredAgents = agents.filter(a => {
-    const matchesSearch = a.id.toLowerCase().includes(search.toLowerCase()) ||
-                         (a.hostname && a.hostname.toLowerCase().includes(search.toLowerCase()));
-    const matchesStatus = statusFilter === 'all' || a.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-          <h3 className="text-lg font-bold text-gray-900">All Agents</h3>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="all">All Status</option>
-              <option value="online">Online</option>
-              <option value="offline">Offline</option>
-            </select>
-            <div className="relative flex-1 sm:w-64">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search agents..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-              />
-            </div>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Agent ID</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Client</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Status</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Hostname</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instances</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Last Heartbeat</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Version</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredAgents.map(agent => (
-                  <tr key={agent.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4 text-sm font-mono text-gray-700">{agent.id}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{agent.clientName}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant={agent.status === 'online' ? 'success' : 'danger'}>
-                        {agent.status}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{agent.hostname || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{agent.instanceCount || 0}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">
-                      {agent.lastHeartbeat ? new Date(agent.lastHeartbeat).toLocaleString() : 'Never'}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{agent.agentVersion || 'N/A'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// Main App Component with all enhancements
+// ==============================================================================
+// MAIN APP COMPONENT
+// ==============================================================================
 
 const App = () => {
   const [activePage, setActivePage] = useState('overview');
@@ -3045,6 +2935,10 @@ const App = () => {
           {activePage === 'overview' && <AdminOverview />}
           {activePage === 'clients' && <AllClientsPage onSelectClient={handleSelectClient} />}
           {activePage === 'agents' && <AllAgentsPage />}
+          {activePage === 'instances' && <AllInstancesPage />}
+          {activePage === 'savings' && <GlobalSavingsPage />}
+          {activePage === 'activity' && <ActivityLogPage />}
+          {activePage === 'health' && <SystemHealthPage />}
           {activePage === 'client-detail' && selectedClientId && (
             <ClientDetailView
               clientId={selectedClientId}
