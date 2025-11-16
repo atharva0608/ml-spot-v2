@@ -10,7 +10,7 @@ import {
   Power, PowerOff, RefreshCw, Filter, Calendar, Download, Settings,
   Trash2, TrendingUp, DollarSign, Clock, Database, Cpu, Save, X, Eye,
   Menu, Shield, AlertTriangle, ChevronLeft, FileText, Globe, HardDrive,
-  Play, Pause, RotateCw, Monitor, Package
+  Play, Pause, RotateCw, Monitor, Package, Plus, Copy, Key, UserPlus
 } from 'lucide-react';
 
 // ==============================================================================
@@ -22,7 +22,7 @@ const API_CONFIG = {
 };
 
 // ==============================================================================
-// COMPLETE API CLIENT
+// COMPLETE API CLIENT - Updated with new client management methods
 // ==============================================================================
 
 class APIClient {
@@ -60,6 +60,30 @@ class APIClient {
   async getPoolStatistics() { return this.request('/api/admin/pool-statistics'); }
   async getAgentHealth() { return this.request('/api/admin/agent-health'); }
   async exportGlobalStats() { window.open(`${this.baseUrl}/api/admin/export/global-stats`, '_blank'); }
+
+  // NEW: Client Management APIs
+  async createClient(name) {
+    return this.request('/api/admin/clients/create', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async deleteClient(clientId) {
+    return this.request(`/api/admin/clients/${clientId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async regenerateClientToken(clientId) {
+    return this.request(`/api/admin/clients/${clientId}/regenerate-token`, {
+      method: 'POST',
+    });
+  }
+
+  async getClientToken(clientId) {
+    return this.request(`/api/admin/clients/${clientId}/token`);
+  }
 
   // Notification APIs
   async getNotifications(clientId = null, limit = 10) {
@@ -325,6 +349,440 @@ const EmptyState = ({ icon, title, description }) => (
     {description && <p className="text-sm text-gray-500 mt-1 text-center px-4">{description}</p>}
   </div>
 );
+
+// ==============================================================================
+// NEW: ADD CLIENT MODAL COMPONENT
+// ==============================================================================
+
+const AddClientModal = ({ onClose, onSuccess }) => {
+  const [clientName, setClientName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [createdClient, setCreatedClient] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreate = async () => {
+    if (!clientName.trim()) {
+      setError('Client name is required');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await api.createClient(clientName.trim());
+      setCreatedClient(result.client);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopyToken = () => {
+    if (createdClient?.token) {
+      navigator.clipboard.writeText(createdClient.token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleClose = () => {
+    if (createdClient) {
+      onSuccess();
+    }
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className="p-6 border-b border-gray-200 sticky top-0 bg-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="bg-blue-100 p-2 rounded-lg">
+                <UserPlus size={24} className="text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {createdClient ? 'Client Created!' : 'Add New Client'}
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  {createdClient 
+                    ? 'Save the token below - it won\'t be shown again'
+                    : 'Create a new client account with auto-generated token'}
+                </p>
+              </div>
+            </div>
+            <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6">
+          {!createdClient ? (
+            // Creation Form
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Client Name *
+                </label>
+                <input
+                  type="text"
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  placeholder="e.g., Acme Corporation"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
+                  autoFocus
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  A unique client ID and secure token will be auto-generated
+                </p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2">
+                    <AlertCircle size={16} className="text-red-600" />
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            // Success View with Token Display
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <CheckCircle size={20} className="text-green-600" />
+                  <p className="text-sm font-semibold text-green-800">Client Created Successfully!</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+                    Client ID
+                  </label>
+                  <div className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
+                    <code className="text-sm font-mono text-gray-800">{createdClient.id}</code>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+                    Client Name
+                  </label>
+                  <div className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-800">{createdClient.name}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase mb-1">
+                    Client Token (API Key)
+                  </label>
+                  <div className="relative">
+                    <div className="bg-yellow-50 px-4 py-3 rounded-lg border-2 border-yellow-300 pr-24">
+                      <code className="text-sm font-mono text-gray-800 break-all">
+                        {createdClient.token}
+                      </code>
+                    </div>
+                    <button
+                      onClick={handleCopyToken}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 bg-white px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 transition-colors flex items-center space-x-1"
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle size={14} className="text-green-600" />
+                          <span className="text-xs font-medium text-green-600">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} className="text-gray-600" />
+                          <span className="text-xs font-medium text-gray-600">Copy</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="mt-2 bg-yellow-50 border border-yellow-200 rounded p-3">
+                    <div className="flex items-start space-x-2">
+                      <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-yellow-800">
+                        <strong>Important:</strong> Save this token securely! It will be used by the agent to authenticate with the server. You can regenerate it later, but all existing agents will need to be updated.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Modal Footer */}
+        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3 sticky bottom-0 bg-white">
+          {!createdClient ? (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={loading}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleCreate}
+                loading={loading}
+                icon={<Plus size={16} />}
+              >
+                Create Client
+              </Button>
+            </>
+          ) : (
+            <Button variant="success" onClick={handleClose} icon={<CheckCircle size={16} />}>
+              Done
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==============================================================================
+// NEW: VIEW TOKEN MODAL COMPONENT
+// ==============================================================================
+
+const ViewTokenModal = ({ client, onClose, onRegenerate }) => {
+  const [token, setToken] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    loadToken();
+  }, [client.id]);
+
+  const loadToken = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api.getClientToken(client.id);
+      setToken(result.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!window.confirm(
+      `⚠️ WARNING: Regenerating the token will invalidate the current token.\n\n` +
+      `All agents using the old token will lose connection and need to be updated.\n\n` +
+      `Are you sure you want to continue?`
+    )) {
+      return;
+    }
+
+    setRegenerating(true);
+    try {
+      const result = await api.regenerateClientToken(client.id);
+      setToken(result.token);
+      if (onRegenerate) onRegenerate();
+      alert('✓ Token regenerated successfully!\n\nMake sure to update all agents with the new token.');
+    } catch (err) {
+      alert('Failed to regenerate token: ' + err.message);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const handleCopy = () => {
+    if (token) {
+      navigator.clipboard.writeText(token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="bg-yellow-100 p-2 rounded-lg">
+                <Key size={24} className="text-yellow-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Client Token</h3>
+                <p className="text-sm text-gray-500 mt-1">{client.name}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="flex justify-center py-8">
+              <LoadingSpinner />
+            </div>
+          ) : error ? (
+            <ErrorMessage message={error} onRetry={loadToken} />
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase mb-2">
+                  API Token
+                </label>
+                <div className="relative">
+                  <div className="bg-gray-50 px-4 py-3 rounded-lg border border-gray-300 pr-24">
+                    <code className="text-sm font-mono text-gray-800 break-all">{token}</code>
+                  </div>
+                  <button
+                    onClick={handleCopy}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 bg-white px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 flex items-center space-x-1"
+                  >
+                    {copied ? (
+                      <>
+                        <CheckCircle size={14} className="text-green-600" />
+                        <span className="text-xs font-medium text-green-600">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} className="text-gray-600" />
+                        <span className="text-xs font-medium text-gray-600">Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                <div className="flex items-start space-x-2">
+                  <AlertTriangle size={16} className="text-orange-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-orange-800">
+                    Keep this token secure. Anyone with this token can register agents and access this client's data.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-between">
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={handleRegenerate}
+            loading={regenerating}
+            icon={<RefreshCw size={14} />}
+          >
+            Regenerate Token
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ==============================================================================
+// NEW: DELETE CLIENT CONFIRMATION MODAL
+// ==============================================================================
+
+const DeleteClientModal = ({ client, onClose, onSuccess }) => {
+  const [confirmName, setConfirmName] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleDelete = async () => {
+    if (confirmName !== client.name) {
+      alert('Client name does not match. Please type the exact client name to confirm deletion.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.deleteClient(client.id);
+      alert(`✓ Client "${client.name}" has been deleted successfully.`);
+      onSuccess();
+      onClose();
+    } catch (err) {
+      alert('Failed to delete client: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="bg-red-100 p-2 rounded-lg">
+              <Trash2 size={24} className="text-red-600" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Delete Client</h3>
+              <p className="text-sm text-gray-500 mt-1">This action cannot be undone</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <p className="text-sm text-red-800">
+              <strong>Warning:</strong> Deleting this client will permanently remove:
+            </p>
+            <ul className="list-disc list-inside text-sm text-red-700 mt-2 space-y-1">
+              <li>All agents and their configurations</li>
+              <li>All instances and their history</li>
+              <li>All switch events and savings data</li>
+              <li>All notifications and system events</li>
+            </ul>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Type <strong>"{client.name}"</strong> to confirm deletion:
+            </label>
+            <input
+              type="text"
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              placeholder="Enter client name"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={handleDelete}
+            loading={loading}
+            disabled={confirmName !== client.name}
+            icon={<Trash2 size={16} />}
+          >
+            Delete Client
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
 // ==============================================================================
 // NOTIFICATION PANEL
 // ==============================================================================
@@ -924,6 +1382,7 @@ const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
     <tr className="bg-gray-50">
       <td colSpan="10" className="p-4 md:p-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+          {/* Metrics Column */}
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-md font-bold text-gray-900">Instance Metrics</h4>
@@ -976,6 +1435,7 @@ const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
             )}
           </div>
           
+          {/* Available Options Column */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-md font-bold text-gray-900">Available Options</h4>
@@ -1059,6 +1519,7 @@ const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
             )}
           </div>
           
+          {/* Price History Chart Column */}
           <div className="bg-white p-4 rounded-lg border border-gray-200">
             <h4 className="text-md font-bold text-gray-900 mb-4">
               Price History (7 Days)
@@ -1236,7 +1697,6 @@ const AgentConfigModal = ({ agent, onClose, onSave }) => {
     </div>
   );
 };
-
 // ==============================================================================
 // CLIENT DETAIL TABS WITH ENHANCED CHARTS
 // ==============================================================================
@@ -1285,6 +1745,7 @@ const ClientOverviewTab = ({ clientId }) => {
 
   return (
     <div className="space-y-6">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatCard 
           title="Instances" 
@@ -1312,6 +1773,7 @@ const ClientOverviewTab = ({ clientId }) => {
         />
       </div>
       
+      {/* Charts Grid */}
       {chartData && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
@@ -1384,6 +1846,7 @@ const ClientOverviewTab = ({ clientId }) => {
         </div>
       )}
       
+      {/* Recent Switch History */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Switch History</h3>
         {history.length === 0 ? (
@@ -1599,6 +2062,7 @@ const ClientAgentsTab = ({ clientId }) => {
     </>
   );
 };
+
 const ClientInstancesTab = ({ clientId }) => {
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1633,6 +2097,7 @@ const ClientInstancesTab = ({ clientId }) => {
 
   return (
     <div className="space-y-4">
+      {/* Filters */}
       <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
         <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4">
           <select
@@ -1672,6 +2137,7 @@ const ClientInstancesTab = ({ clientId }) => {
         </div>
       </div>
       
+      {/* Instances Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full">
@@ -1765,7 +2231,6 @@ const ClientInstancesTab = ({ clientId }) => {
     </div>
   );
 };
-
 const ClientSavingsTab = ({ clientId }) => {
   const [savingsData, setSavingsData] = useState([]);
   const [totalSavings, setTotalSavings] = useState(0);
@@ -1809,6 +2274,7 @@ const ClientSavingsTab = ({ clientId }) => {
 
   return (
     <div className="space-y-6">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <StatCard 
           title="Total Savings" 
@@ -1832,6 +2298,7 @@ const ClientSavingsTab = ({ clientId }) => {
         />
       </div>
       
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-4">
@@ -1891,6 +2358,7 @@ const ClientSavingsTab = ({ clientId }) => {
         </div>
       </div>
       
+      {/* Cost Comparison */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-gray-900">Cost Comparison by Month</h3>
@@ -2080,6 +2548,7 @@ const ClientDetailView = ({ clientId, onBack }) => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center space-x-4">
@@ -2108,6 +2577,7 @@ const ClientDetailView = ({ clientId, onBack }) => {
           )}
         </div>
         
+        {/* Tabs */}
         <div className="flex space-x-2 mt-6 border-b border-gray-200 overflow-x-auto">
           {tabs.map(tab => (
             <button
@@ -2126,6 +2596,7 @@ const ClientDetailView = ({ clientId, onBack }) => {
         </div>
       </div>
       
+      {/* Tab Content */}
       <div>
         {activeTab === 'overview' && <ClientOverviewTab clientId={clientId} />}
         {activeTab === 'agents' && <ClientAgentsTab clientId={clientId} />}
@@ -2136,7 +2607,6 @@ const ClientDetailView = ({ clientId, onBack }) => {
     </div>
   );
 };
-
 // ==============================================================================
 // ADMIN PAGES
 // ==============================================================================
@@ -2183,6 +2653,7 @@ const AdminOverview = () => {
   
   return (
     <div className="space-y-6">
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatCard 
           title="Total Clients" 
@@ -2212,6 +2683,7 @@ const AdminOverview = () => {
         />
       </div>
       
+      {/* Activity and Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-6">
@@ -2280,6 +2752,7 @@ const AdminOverview = () => {
         </div>
       </div>
 
+      {/* Top Clients Table */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
           <h3 className="text-lg font-bold text-gray-900">Top Clients by Savings</h3>
@@ -2346,95 +2819,209 @@ const AdminOverview = () => {
   );
 };
 
+// ==============================================================================
+// UPDATED: ALL CLIENTS PAGE WITH ADD CLIENT FEATURE
+// ==============================================================================
+
 const AllClientsPage = ({ onSelectClient }) => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showTokenModal, setShowTokenModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+
+  const loadClients = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.getAllClients();
+      setClients(data);
+    } catch (error) {
+      console.error('Failed to load clients:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const loadClients = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getAllClients();
-        setClients(data);
-      } catch (error) {
-        console.error('Failed to load clients:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadClients();
-  }, []);
+  }, [loadClients]);
 
   const filteredClients = clients.filter(c => 
     c.name.toLowerCase().includes(search.toLowerCase()) ||
     c.id.toLowerCase().includes(search.toLowerCase())
   );
 
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-          <h3 className="text-lg font-bold text-gray-900">All Clients</h3>
-          <div className="relative w-full sm:w-64">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search clients..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            />
-          </div>
-        </div>
+  const handleViewToken = (client, e) => {
+    e.stopPropagation();
+    setSelectedClient(client);
+    setShowTokenModal(true);
+  };
 
-        {loading ? (
-          <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredClients.map(client => (
-              <div 
-                key={client.id}
-                onClick={() => onSelectClient(client.id)}
-                className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50"
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="text-lg font-bold text-gray-900 truncate">{client.name}</h4>
-                    <p className="text-xs text-gray-500 font-mono mt-1 break-all">{client.id}</p>
-                  </div>
-                  <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
-                    {client.status}
-                  </Badge>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-gray-500">Instances</p>
-                    <p className="text-xl font-bold text-gray-900">{client.instances}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500">Agents</p>
-                    <p className="text-xl font-bold text-gray-900">
-                      <span className="text-green-600">{client.agentsOnline}</span>
-                      <span className="text-gray-400">/{client.agentsTotal}</span>
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="pt-4 border-t border-gray-200">
-                  <p className="text-xs text-gray-500">Total Savings</p>
-                  <p className="text-2xl font-bold text-green-600">${(client.totalSavings / 1000).toFixed(1)}k</p>
-                </div>
+  const handleDeleteClient = (client, e) => {
+    e.stopPropagation();
+    setSelectedClient(client);
+    setShowDeleteModal(true);
+  };
+
+  return (
+    <>
+      <div className="space-y-6">
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">All Clients</h3>
+              <p className="text-sm text-gray-500 mt-1">Manage client accounts and tokens</p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search clients..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
               </div>
-            ))}
+              <Button
+                variant="primary"
+                size="md"
+                icon={<Plus size={18} />}
+                onClick={() => setShowAddModal(true)}
+              >
+                Add Client
+              </Button>
+            </div>
           </div>
-        )}
+
+          {loading ? (
+            <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>
+          ) : filteredClients.length === 0 ? (
+            <EmptyState
+              icon={<Users size={48} />}
+              title="No Clients Found"
+              description={search ? `No clients match "${search}"` : 'Click "Add Client" to create your first client'}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredClients.map(client => (
+                <div 
+                  key={client.id}
+                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50 relative group"
+                >
+                  {/* Card Header with Actions */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div 
+                      className="flex-1 min-w-0 cursor-pointer"
+                      onClick={() => onSelectClient(client.id)}
+                    >
+                      <h4 className="text-lg font-bold text-gray-900 truncate">{client.name}</h4>
+                      <p className="text-xs text-gray-500 font-mono mt-1 break-all">{client.id}</p>
+                    </div>
+                    <div className="flex items-center space-x-1">
+                      <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
+                        {client.status}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Client Stats */}
+                  <div 
+                    className="grid grid-cols-2 gap-4 mb-4 cursor-pointer"
+                    onClick={() => onSelectClient(client.id)}
+                  >
+                    <div>
+                      <p className="text-xs text-gray-500">Instances</p>
+                      <p className="text-xl font-bold text-gray-900">{client.instances}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Agents</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        <span className="text-green-600">{client.agentsOnline}</span>
+                        <span className="text-gray-400">/{client.agentsTotal}</span>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Savings */}
+                  <div 
+                    className="pt-4 border-t border-gray-200 cursor-pointer"
+                    onClick={() => onSelectClient(client.id)}
+                  >
+                    <p className="text-xs text-gray-500">Total Savings</p>
+                    <p className="text-2xl font-bold text-green-600">${(client.totalSavings / 1000).toFixed(1)}k</p>
+                  </div>
+
+                  {/* Action Buttons - Always visible */}
+                  <div className="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Key size={14} />}
+                      onClick={(e) => handleViewToken(client, e)}
+                      className="flex-1"
+                    >
+                      Token
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      icon={<Eye size={14} />}
+                      onClick={() => onSelectClient(client.id)}
+                      className="flex-1"
+                    >
+                      View
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      icon={<Trash2 size={14} />}
+                      onClick={(e) => handleDeleteClient(client, e)}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+
+      {/* Modals */}
+      {showAddModal && (
+        <AddClientModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={loadClients}
+        />
+      )}
+
+      {showTokenModal && selectedClient && (
+        <ViewTokenModal
+          client={selectedClient}
+          onClose={() => {
+            setShowTokenModal(false);
+            setSelectedClient(null);
+          }}
+          onRegenerate={loadClients}
+        />
+      )}
+
+      {showDeleteModal && selectedClient && (
+        <DeleteClientModal
+          client={selectedClient}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedClient(null);
+          }}
+          onSuccess={loadClients}
+        />
+      )}
+    </>
   );
 };
-
 const AllAgentsPage = () => {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2913,6 +3500,7 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Sidebar */}
       <AdminSidebar
         clients={clients}
         onSelectClient={handleSelectClient}
@@ -2923,7 +3511,9 @@ const App = () => {
         onClose={() => setSidebarOpen(false)}
       />
       
+      {/* Main Content Area */}
       <div className="lg:ml-72 min-h-screen">
+        {/* Header */}
         <AdminHeader
           stats={stats}
           onRefresh={loadData}
@@ -2931,6 +3521,7 @@ const App = () => {
           onMenuToggle={() => setSidebarOpen(true)}
         />
         
+        {/* Page Content */}
         <main className="p-4 md:p-6">
           {activePage === 'overview' && <AdminOverview />}
           {activePage === 'clients' && <AllClientsPage onSelectClient={handleSelectClient} />}
