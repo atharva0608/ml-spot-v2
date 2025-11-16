@@ -1,22 +1,21 @@
 """
-AWS Spot Optimizer - Central Server Backend (FIXED v2.0.2)
-===========================================================
-Fixed all references from 'trigger' to 'event_trigger' to match schema
-Added dotenv loading for environment variables
-Added initialize_app() at module level for gunicorn compatibility
+AWS Spot Optimizer - Central Server Backend (UPDATED v2.1.0)
+==============================================================
+Added notification system, enhanced search, and fixed model status reporting
 
 CHANGES:
-- Line ~14: Added dotenv loading
-- Line ~1144: Fixed get_global_stats() to use event_trigger
-- Line ~1319: Fixed get_switch_history() to use event_trigger
-- Line ~1597: Added initialize_app() call at module level (for gunicorn)
-- All SQL queries now correctly reference the event_trigger column
+- Added notification endpoints (GET, mark-read, mark-all-read)
+- Added global search endpoint across clients, instances, and agents
+- Added client statistics with charts data endpoint
+- Fixed model loading status to differentiate decision engine vs ML models
+- Added helper function to create notifications
+- Integrated notifications into key events (switches, agent offline)
 """
 
 import os
 import json
 from dotenv import load_dotenv
-load_dotenv()  # Load .env file
+load_dotenv()
 
 import logging
 from datetime import datetime, timedelta
@@ -66,6 +65,15 @@ class Config:
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 config = Config()
+
+# ==============================================================================
+# MODEL STATUS TRACKING (FIXED)
+# ==============================================================================
+
+model_status = {
+    'decision_engine_loaded': False,  # Lightweight decision logic
+    'ml_models_loaded': False         # Heavy ML models (if applicable)
+}
 
 # ==============================================================================
 # INPUT VALIDATION SCHEMAS
@@ -186,14 +194,29 @@ def log_system_event(event_type, severity, message, client_id=None, agent_id=Non
         logger.error(f"Failed to log system event: {e}")
 
 # ==============================================================================
-# DECISION ENGINE INITIALIZATION
+# NOTIFICATION HELPER FUNCTION
+# ==============================================================================
+
+def create_notification(message, severity='info', client_id=None):
+    """Create a notification"""
+    try:
+        execute_query("""
+            INSERT INTO notifications (message, severity, client_id, created_at)
+            VALUES (%s, %s, %s, NOW())
+        """, (message, severity, client_id))
+        logger.info(f"Notification created: {message[:50]}... (severity: {severity})")
+    except Exception as e:
+        logger.error(f"Failed to create notification: {e}")
+
+# ==============================================================================
+# DECISION ENGINE INITIALIZATION (FIXED STATUS TRACKING)
 # ==============================================================================
 
 decision_engine = None
 
 def init_decision_engine():
     """Initialize decision engine"""
-    global decision_engine
+    global decision_engine, model_status
     try:
         engine_config = DecisionEngineConfig(
             model_dir=config.MODEL_DIR,
@@ -204,12 +227,27 @@ def init_decision_engine():
         decision_engine = DecisionEngine(engine_config)
         decision_engine.load()
         
+        # Update status tracking
+        model_status['decision_engine_loaded'] = True
+        
+        # Check if ML models are actually loaded
+        if hasattr(decision_engine, 'has_ml_models'):
+            model_status['ml_models_loaded'] = decision_engine.has_ml_models()
+        else:
+            # For rule-based engines, no ML models
+            model_status['ml_models_loaded'] = (config.DECISION_ENGINE_TYPE == 'ml_based')
+        
         logger.info(f"✓ Decision engine initialized: {config.DECISION_ENGINE_TYPE}")
+        logger.info(f"  - Decision Engine: {'Loaded' if model_status['decision_engine_loaded'] else 'Not Loaded'}")
+        logger.info(f"  - ML Models: {'Loaded' if model_status['ml_models_loaded'] else 'Not Loaded'}")
+        
         log_system_event('decision_engine_loaded', 'info', 
                         f'Decision engine {config.DECISION_ENGINE_TYPE} loaded successfully')
         
     except Exception as e:
         logger.error(f"Failed to initialize decision engine: {e}")
+        model_status['decision_engine_loaded'] = False
+        model_status['ml_models_loaded'] = False
         log_system_event('decision_engine_load_failed', 'error', str(e))
         raise
 
@@ -305,6 +343,213 @@ def cleanup_old_data_job():
         log_system_event('cleanup_failed', 'error', str(e))
 
 # ==============================================================================
+# NEW NOTIFICATION ENDPOINTS
+# ==============================================================================
+
+@app.route('/api/notifications', methods=['GET'])
+def get_notifications():
+    """Get recent notifications"""
+    client_id = request.args.get('client_id')
+    limit = int(request.args.get('limit', 10))
+    
+    try:
+        query = """
+            SELECT id, message, severity, is_read, created_at
+            FROM notifications
+        """
+        params = []
+        
+        if client_id:
+            query += " WHERE client_id = %s OR client_id IS NULL"
+            params.append(client_id)
+        
+        query += " ORDER BY created_at DESC LIMIT %s"
+        params.append(limit)
+        
+        notifications = execute_query(query, tuple(params), fetch=True)
+        
+        return jsonify([{
+            'id': n['id'],
+            'message': n['message'],
+            'severity': n['severity'],
+            'isRead': n['is_read'],
+            'time': n['created_at'].isoformat()
+        } for n in notifications])
+    except Exception as e:
+        logger.error(f"Get notifications error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notifications/<int:notif_id>/mark-read', methods=['POST'])
+def mark_notification_read(notif_id):
+    """Mark notification as read"""
+    try:
+        execute_query("""
+            UPDATE notifications
+            SET is_read = TRUE
+            WHERE id = %s
+        """, (notif_id,))
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Mark notification read error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notifications/mark-all-read', methods=['POST'])
+def mark_all_notifications_read():
+    """Mark all notifications as read"""
+    client_id = request.json.get('client_id') if request.json else None
+    
+    try:
+        if client_id:
+            execute_query("""
+                UPDATE notifications
+                SET is_read = TRUE
+                WHERE client_id = %s OR client_id IS NULL
+            """, (client_id,))
+        else:
+            execute_query("UPDATE notifications SET is_read = TRUE")
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Mark all read error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# ENHANCED SEARCH ENDPOINT
+# ==============================================================================
+
+@app.route('/api/search', methods=['GET'])
+def global_search():
+    """Global search across clients, instances, and agents"""
+    query = request.args.get('q', '').strip()
+    
+    if not query or len(query) < 2:
+        return jsonify({'results': []})
+    
+    try:
+        results = {
+            'clients': [],
+            'instances': [],
+            'agents': []
+        }
+        
+        # Search clients
+        clients = execute_query("""
+            SELECT id, name, status, total_savings
+            FROM clients
+            WHERE name LIKE %s OR id LIKE %s
+            LIMIT 5
+        """, (f'%{query}%', f'%{query}%'), fetch=True)
+        
+        results['clients'] = [{
+            'id': c['id'],
+            'name': c['name'],
+            'type': 'client',
+            'status': c['status']
+        } for c in clients]
+        
+        # Search instances
+        instances = execute_query("""
+            SELECT i.id, i.instance_type, i.current_mode, c.name as client_name
+            FROM instances i
+            JOIN clients c ON c.id = i.client_id
+            WHERE i.id LIKE %s OR i.instance_type LIKE %s
+            LIMIT 5
+        """, (f'%{query}%', f'%{query}%'), fetch=True)
+        
+        results['instances'] = [{
+            'id': i['id'],
+            'name': f"{i['id']} ({i['instance_type']})",
+            'type': 'instance',
+            'client': i['client_name']
+        } for i in instances]
+        
+        # Search agents
+        agents = execute_query("""
+            SELECT a.id, a.status, c.name as client_name
+            FROM agents a
+            JOIN clients c ON c.id = a.client_id
+            WHERE a.id LIKE %s OR a.hostname LIKE %s
+            LIMIT 5
+        """, (f'%{query}%', f'%{query}%'), fetch=True)
+        
+        results['agents'] = [{
+            'id': a['id'],
+            'name': a['id'],
+            'type': 'agent',
+            'status': a['status'],
+            'client': a['client_name']
+        } for a in agents]
+        
+        return jsonify(results)
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# CLIENT STATISTICS WITH CHARTS DATA
+# ==============================================================================
+
+@app.route('/api/client/<client_id>/stats/charts', methods=['GET'])
+def get_client_chart_data(client_id):
+    """Get comprehensive chart data for client dashboard"""
+    try:
+        # Monthly savings trend
+        savings_trend = execute_query("""
+            SELECT 
+                MONTHNAME(CONCAT(year, '-', month, '-01')) as month,
+                savings,
+                baseline_cost,
+                actual_cost
+            FROM client_savings_monthly
+            WHERE client_id = %s
+            ORDER BY year DESC, month DESC
+            LIMIT 12
+        """, (client_id,), fetch=True)
+        
+        # Mode distribution
+        mode_dist = execute_query("""
+            SELECT 
+                current_mode,
+                COUNT(*) as count
+            FROM instances
+            WHERE client_id = %s AND is_active = TRUE
+            GROUP BY current_mode
+        """, (client_id,), fetch=True)
+        
+        # Switch frequency over time
+        switch_freq = execute_query("""
+            SELECT 
+                DATE(timestamp) as date,
+                COUNT(*) as switches
+            FROM switch_events
+            WHERE client_id = %s
+              AND timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY DATE(timestamp)
+            ORDER BY date ASC
+        """, (client_id,), fetch=True)
+        
+        return jsonify({
+            'savingsTrend': [{
+                'month': s['month'],
+                'savings': float(s['savings']),
+                'baseline': float(s['baseline_cost']),
+                'actual': float(s['actual_cost'])
+            } for s in reversed(savings_trend)],
+            'modeDistribution': [{
+                'mode': m['current_mode'],
+                'count': m['count']
+            } for m in mode_dist],
+            'switchFrequency': [{
+                'date': s['date'].isoformat(),
+                'switches': s['switches']
+            } for s in switch_freq]
+        })
+    except Exception as e:
+        logger.error(f"Get chart data error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
 # AGENT-FACING API ENDPOINTS
 # ==============================================================================
 
@@ -345,6 +590,13 @@ def register_agent():
                 VALUES (%s, %s, 'online', %s, %s, NOW())
             """, (agent_id, request.client_id, validated_data.get('hostname'), 
                   validated_data.get('agent_version')))
+            
+            # Create notification for new agent
+            create_notification(
+                f"New agent registered: {agent_id}",
+                'info',
+                request.client_id
+            )
         
         config_exists = execute_query(
             "SELECT agent_id FROM agent_configs WHERE agent_id = %s",
@@ -437,16 +689,31 @@ def agent_heartbeat(agent_id):
     data = request.json
     
     try:
+        # Get previous status
+        prev_status = execute_query("""
+            SELECT status FROM agents WHERE id = %s
+        """, (agent_id,), fetch_one=True)
+        
+        new_status = data.get('status', 'online')
+        
         execute_query("""
             UPDATE agents 
             SET status = %s, last_heartbeat = NOW(), instance_count = %s
             WHERE id = %s AND client_id = %s
         """, (
-            data.get('status', 'online'),
+            new_status,
             len(data.get('monitored_instances', [])),
             agent_id,
             request.client_id
         ))
+        
+        # Notify if agent went offline
+        if prev_status and prev_status['status'] == 'online' and new_status == 'offline':
+            create_notification(
+                f"Agent {agent_id} went offline",
+                'warning',
+                request.client_id
+            )
         
         execute_query(
             "UPDATE clients SET last_sync_at = NOW() WHERE id = %s",
@@ -515,42 +782,63 @@ def get_agent_config(agent_id):
             WHERE ac.agent_id = %s AND a.client_id = %s
         """, (agent_id, request.client_id), fetch_one=True)
         
-        if not config_data:
-            return jsonify({'error': 'Agent not found'}), 404
+        if not config_data or not config_data['enabled']:
+            return jsonify({
+                'instance_id': instance['instance_id'],
+                'risk_score': 0.0,
+                'recommended_action': 'stay',
+                'recommended_mode': instance['current_mode'],
+                'recommended_pool_id': instance.get('current_pool_id'),
+                'expected_savings_per_hour': 0.0,
+                'allowed': False,
+                'reason': 'Agent disabled'
+            })
         
-        return jsonify({
-            'enabled': config_data['enabled'],
-            'auto_switch_enabled': config_data['auto_switch_enabled'],
-            'auto_terminate_enabled': config_data['auto_terminate_enabled'],
-            'min_savings_percent': float(config_data['min_savings_percent']),
-            'risk_threshold': float(config_data['risk_threshold']),
-            'max_switches_per_week': config_data['max_switches_per_week'],
-            'min_pool_duration_hours': config_data['min_pool_duration_hours']
-        })
+        # Get switch history for policy enforcement
+        recent_switches = execute_query("""
+            SELECT COUNT(*) as count
+            FROM switch_events
+            WHERE agent_id = %s AND timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        """, (agent_id,), fetch_one=True)
+        
+        last_switch = execute_query("""
+            SELECT timestamp FROM switch_events
+            WHERE instance_id = %s OR new_instance_id = %s
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (instance['instance_id'], instance['instance_id']), fetch_one=True)
+        
+        # CALL DECISION ENGINE (DECOUPLED)
+        decision = decision_engine.make_decision(
+            instance=instance,
+            pricing=pricing,
+            config=config_data,
+            recent_switches_count=recent_switches['count'],
+            last_switch_time=last_switch['timestamp'] if last_switch else None
+        )
+        
+        # Store decision in database
+        execute_query("""
+            INSERT INTO risk_scores (
+                client_id, instance_id, agent_id, risk_score, recommended_action,
+                recommended_pool_id, recommended_mode, expected_savings_per_hour,
+                allowed, reason
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            request.client_id, instance['instance_id'], agent_id,
+            decision['risk_score'], decision['recommended_action'], 
+            decision['recommended_pool_id'], decision['recommended_mode'], 
+            decision['expected_savings_per_hour'], decision['allowed'], 
+            decision['reason']
+        ))
+        
+        return jsonify(decision)
         
     except Exception as e:
-        logger.error(f"Get config error: {e}")
+        logger.error(f"Decision error: {e}")
+        log_system_event('decision_error', 'error', str(e), 
+                        request.client_id, agent_id, instance.get('instance_id'))
         return jsonify({'error': str(e)}), 500
-
-@app.route('/api/agents/<agent_id>/decide', methods=['POST'])
-@require_client_token
-def get_decision(agent_id):
-    """Get switching decision from decision engine (FULLY DECOUPLED)"""
-    data = request.json
-    
-    try:
-        instance = data['instance']
-        pricing = data['pricing']
-        
-        # Get agent config
-        config_data = execute_query("""
-            SELECT ac.*, a.enabled, a.auto_switch_enabled
-            FROM agent_configs ac
-            JOIN agents a ON a.id = ac.agent_id
-            WHERE ac.agent_id = %s AND a.client_id = %s
-        """, (agent_id, request.client_id), fetch_one=True)
-        
-        if not config_data or not config_data['enabled']:
             return jsonify({
                 'instance_id': instance['instance_id'],
                 'risk_score': 0.0,
@@ -623,7 +911,6 @@ def switch_report(agent_id):
         
         savings_impact = prices['old_spot'] - prices.get('new_spot', prices['on_demand'])
         
-        # FIXED: Use event_trigger instead of trigger
         execute_query("""
             INSERT INTO switch_events (
                 client_id, instance_id, agent_id, event_trigger,
@@ -634,7 +921,7 @@ def switch_report(agent_id):
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             request.client_id, new_inst['instance_id'], agent_id,
-            data['trigger'],  # This becomes event_trigger in the database
+            data['trigger'],
             old_inst['mode'], new_inst['mode'],
             old_inst.get('pool_id'), new_inst.get('pool_id'),
             prices['on_demand'], prices['old_spot'], prices.get('new_spot', 0),
@@ -676,6 +963,13 @@ def switch_report(agent_id):
                 SET total_savings = total_savings + %s
                 WHERE id = %s
             """, (hourly_savings, request.client_id))
+        
+        # Create notification for switch
+        create_notification(
+            f"Instance switched: {new_inst['instance_id']} - Saved ${savings_impact:.4f}/hr",
+            'info',
+            request.client_id
+        )
         
         log_system_event('switch_completed', 'info', 
                         f"Switch from {old_inst['instance_id']} to {new_inst['instance_id']}",
@@ -979,6 +1273,13 @@ def force_instance_switch(instance_id):
             VALUES (%s, %s, %s, %s, NOW())
         """, (instance['agent_id'], instance_id, target_mode, target_pool_id))
         
+        # Create notification for manual switch
+        create_notification(
+            f"Manual switch queued for {instance_id}",
+            'warning',
+            instance['client_id']
+        )
+        
         log_system_event('manual_switch_requested', 'info',
                         f"Manual switch requested for {instance_id} to {target_mode}",
                         instance['client_id'], instance['agent_id'], instance_id,
@@ -996,7 +1297,7 @@ def force_instance_switch(instance_id):
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# NEW ENDPOINTS - AGENT CONFIGURATION & STATISTICS
+# AGENT CONFIGURATION & STATISTICS
 # ==============================================================================
 
 @app.route('/api/client/agents/<agent_id>/config', methods=['POST'])
@@ -1224,7 +1525,6 @@ def export_switch_history(client_id):
     from flask import Response
     
     try:
-        # FIXED: Use event_trigger instead of trigger
         history = execute_query("""
             SELECT 
                 timestamp,
@@ -1385,7 +1685,6 @@ def get_switch_history(client_id):
     instance_id = request.args.get('instance_id')
     
     try:
-        # FIXED: Use event_trigger instead of trigger
         query = """
             SELECT *
             FROM switch_events
@@ -1409,7 +1708,7 @@ def get_switch_history(client_id):
             'toMode': h['to_mode'],
             'fromPool': h['from_pool_id'] or 'n/a',
             'toPool': h['to_pool_id'] or 'n/a',
-            'trigger': h['event_trigger'],  # FIXED: Now correctly retrieves event_trigger
+            'trigger': h['event_trigger'],
             'price': float(h['new_spot_price'] or h['on_demand_price'] or 0),
             'savingsImpact': float(h['savings_impact'] or 0)
         } for h in history])
@@ -1419,14 +1718,13 @@ def get_switch_history(client_id):
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# ADMIN DASHBOARD API ENDPOINTS
+# ADMIN DASHBOARD API ENDPOINTS (FIXED MODEL STATUS)
 # ==============================================================================
 
 @app.route('/api/admin/stats', methods=['GET'])
 def get_global_stats():
     """Get global statistics"""
     try:
-        # FIXED: Use event_trigger instead of trigger
         stats = execute_query("""
             SELECT 
                 COUNT(DISTINCT c.id) as total_accounts,
@@ -1443,6 +1741,13 @@ def get_global_stats():
             LEFT JOIN switch_events se ON se.client_id = c.id
         """, fetch_one=True)
         
+        # FIXED: Properly report model status
+        backend_health = 'Healthy'
+        if not model_status['decision_engine_loaded']:
+            backend_health = 'Decision Engine Not Loaded'
+        elif not model_status['ml_models_loaded'] and config.DECISION_ENGINE_TYPE == 'ml_based':
+            backend_health = 'ML Models Not Loaded (Using Rules)'
+        
         return jsonify({
             'totalAccounts': stats['total_accounts'] or 0,
             'agentsOnline': stats['agents_online'] or 0,
@@ -1452,7 +1757,9 @@ def get_global_stats():
             'totalSwitches': stats['total_switches'] or 0,
             'manualSwitches': stats['manual_switches'] or 0,
             'modelSwitches': stats['model_switches'] or 0,
-            'backendHealth': 'Healthy' if decision_engine and decision_engine.is_loaded() else 'Models Not Loaded'
+            'backendHealth': backend_health,
+            'decisionEngineLoaded': model_status['decision_engine_loaded'],
+            'mlModelsLoaded': model_status['ml_models_loaded']
         })
         
     except Exception as e:
@@ -1530,7 +1837,7 @@ def get_recent_activity():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# NEW ADMIN ENDPOINTS FOR FUNCTIONAL PAGES
+# ADMIN FUNCTIONAL PAGES ENDPOINTS
 # ==============================================================================
 
 @app.route('/api/admin/system-health', methods=['GET'])
@@ -1544,8 +1851,14 @@ def get_system_health():
         except:
             db_status = 'Disconnected'
         
-        # Check decision engine
-        engine_status = 'Loaded' if decision_engine and decision_engine.is_loaded() else 'Not Loaded'
+        # Check decision engine (FIXED)
+        if model_status['decision_engine_loaded']:
+            if model_status['ml_models_loaded']:
+                engine_status = 'Fully Loaded (ML Models Active)'
+            else:
+                engine_status = 'Loaded (Rule-Based Only)'
+        else:
+            engine_status = 'Not Loaded'
         
         # Get connection pool stats
         pool_active = connection_pool._cnx_queue.qsize() if connection_pool else 0
@@ -1555,7 +1868,12 @@ def get_system_health():
             'database': db_status,
             'decisionEngine': engine_status,
             'connectionPool': f'{pool_active}/{config.DB_POOL_SIZE}',
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.utcnow().isoformat(),
+            'modelStatus': {
+                'decisionEngineLoaded': model_status['decision_engine_loaded'],
+                'mlModelsLoaded': model_status['ml_models_loaded'],
+                'engineType': config.DECISION_ENGINE_TYPE
+            }
         })
     except Exception as e:
         logger.error(f"System health check error: {e}")
@@ -1769,7 +2087,7 @@ def get_instance_logs(instance_id):
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# HEALTH CHECK
+# HEALTH CHECK (UPDATED)
 # ==============================================================================
 
 @app.route('/health', methods=['GET'])
@@ -1781,10 +2099,11 @@ def health_check():
         return jsonify({
             'status': 'healthy',
             'timestamp': datetime.utcnow().isoformat(),
-            'models_loaded': decision_engine.is_loaded() if decision_engine else False,
+            'decision_engine_loaded': model_status['decision_engine_loaded'],
+            'ml_models_loaded': model_status['ml_models_loaded'],
             'database': 'connected',
             'connection_pool': 'active',
-            'decision_engine': config.DECISION_ENGINE_TYPE
+            'decision_engine_type': config.DECISION_ENGINE_TYPE
         })
     except Exception as e:
         return jsonify({
@@ -1799,7 +2118,7 @@ def health_check():
 def initialize_app():
     """Initialize application on startup"""
     logger.info("="*80)
-    logger.info("AWS Spot Optimizer - Central Server Starting (FIXED v2.0.2)")
+    logger.info("AWS Spot Optimizer - Central Server Starting (UPDATED v2.1.0)")
     logger.info("="*80)
     
     # Initialize connection pool
@@ -1825,15 +2144,16 @@ def initialize_app():
     
     logger.info("Server initialization complete")
     logger.info(f"Decision Engine: {config.DECISION_ENGINE_TYPE}")
+    logger.info(f"  - Decision Engine Loaded: {model_status['decision_engine_loaded']}")
+    logger.info(f"  - ML Models Loaded: {model_status['ml_models_loaded']}")
     logger.info(f"Listening on {config.HOST}:{config.PORT}")
     logger.info("="*80)
-    logger.info("FIXES APPLIED:")
-    logger.info("  ✓ Added dotenv loading for environment variables")
-    logger.info("  ✓ Added initialize_app() at module level (for gunicorn)")
-    logger.info("  ✓ All 'trigger' references changed to 'event_trigger'")
-    logger.info("  ✓ Admin stats query fixed (line ~1144)")
-    logger.info("  ✓ Switch history export fixed (line ~1319)")
-    logger.info("  ✓ Switch history API fixed (line ~1365)")
+    logger.info("NEW FEATURES IN v2.1.0:")
+    logger.info("  ✓ Notification system with create_notification() helper")
+    logger.info("  ✓ Global search across clients, instances, and agents")
+    logger.info("  ✓ Client statistics with comprehensive charts data")
+    logger.info("  ✓ Fixed model status tracking (Decision Engine vs ML Models)")
+    logger.info("  ✓ Notifications integrated into key events")
     logger.info("="*80)
 
 # ==============================================================================
@@ -1844,9 +2164,43 @@ def initialize_app():
 initialize_app()
 
 if __name__ == '__main__':
-    initialize_app()
     app.run(
         host=config.HOST,
         port=config.PORT,
         debug=config.DEBUG
-    )
+    ):
+            return jsonify({'error': 'Agent not found'}), 404
+        
+        return jsonify({
+            'enabled': config_data['enabled'],
+            'auto_switch_enabled': config_data['auto_switch_enabled'],
+            'auto_terminate_enabled': config_data['auto_terminate_enabled'],
+            'min_savings_percent': float(config_data['min_savings_percent']),
+            'risk_threshold': float(config_data['risk_threshold']),
+            'max_switches_per_week': config_data['max_switches_per_week'],
+            'min_pool_duration_hours': config_data['min_pool_duration_hours']
+        })
+        
+    except Exception as e:
+        logger.error(f"Get config error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/agents/<agent_id>/decide', methods=['POST'])
+@require_client_token
+def get_decision(agent_id):
+    """Get switching decision from decision engine (FULLY DECOUPLED)"""
+    data = request.json
+    
+    try:
+        instance = data['instance']
+        pricing = data['pricing']
+        
+        # Get agent config
+        config_data = execute_query("""
+            SELECT ac.*, a.enabled, a.auto_switch_enabled
+            FROM agent_configs ac
+            JOIN agents a ON a.id = ac.agent_id
+            WHERE ac.agent_id = %s AND a.client_id = %s
+        """, (agent_id, request.client_id), fetch_one=True)
+        
+        if not config_data
