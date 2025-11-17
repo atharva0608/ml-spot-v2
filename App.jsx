@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-  AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, RadarChart, PolarGrid,
-  PolarAngleAxis, PolarRadiusAxis, Radar
+  AreaChart, Area, LineChart, Line, PieChart, Pie, Cell
 } from 'recharts';
 import {
   LayoutDashboard, Users, Server, Zap, BarChart3, History, AlertCircle,
@@ -22,7 +21,7 @@ const API_CONFIG = {
 };
 
 // ==============================================================================
-// COMPLETE API CLIENT - Updated with new client management methods
+// COMPLETE API CLIENT WITH REAL BACKEND ENDPOINTS
 // ==============================================================================
 
 class APIClient {
@@ -53,15 +52,19 @@ class APIClient {
   }
 
   // Admin APIs
-  async getGlobalStats() { return this.request('/api/admin/stats'); }
-  async getAllClients() { return this.request('/api/admin/clients'); }
-  async getRecentActivity() { return this.request('/api/admin/activity'); }
-  async getSystemHealth() { return this.request('/api/admin/system-health'); }
-  async getPoolStatistics() { return this.request('/api/admin/pool-statistics'); }
-  async getAgentHealth() { return this.request('/api/admin/agent-health'); }
-  async exportGlobalStats() { window.open(`${this.baseUrl}/api/admin/export/global-stats`, '_blank'); }
+  async getGlobalStats() { 
+    return this.request('/api/admin/stats'); 
+  }
+  
+  async getAllClients() { 
+    return this.request('/api/admin/clients'); 
+  }
+  
+  async getSystemHealth() { 
+    return this.request('/health'); 
+  }
 
-  // NEW: Client Management APIs
+  // Client Management APIs
   async createClient(name) {
     return this.request('/api/admin/clients/create', {
       method: 'POST',
@@ -85,34 +88,15 @@ class APIClient {
     return this.request(`/api/admin/clients/${clientId}/token`);
   }
 
-  // Notification APIs
-  async getNotifications(clientId = null, limit = 10) {
-    const params = new URLSearchParams();
-    if (clientId) params.append('client_id', clientId);
-    params.append('limit', limit);
-    return this.request(`/api/notifications?${params}`);
-  }
-  
-  async markNotificationRead(notifId) {
-    return this.request(`/api/notifications/${notifId}/mark-read`, { method: 'POST' });
-  }
-  
-  async markAllNotificationsRead(clientId = null) {
-    return this.request('/api/notifications/mark-all-read', {
-      method: 'POST',
-      body: JSON.stringify({ client_id: clientId }),
-    });
+  async getClientDetails(clientId) { 
+    return this.request(`/api/client/${clientId}`); 
   }
 
-  // Search API
-  async globalSearch(query) {
-    return this.request(`/api/search?q=${encodeURIComponent(query)}`);
+  // Agent APIs
+  async getAgents(clientId, includeRetired = false) { 
+    const params = includeRetired ? '?include_retired=true' : '';
+    return this.request(`/api/client/${clientId}/agents${params}`); 
   }
-
-  // Client APIs
-  async getClientDetails(clientId) { return this.request(`/api/client/${clientId}`); }
-  async getAgents(clientId) { return this.request(`/api/client/${clientId}/agents`); }
-  async getClientChartData(clientId) { return this.request(`/api/client/${clientId}/stats/charts`); }
   
   async toggleAgent(agentId, enabled) {
     return this.request(`/api/client/agents/${agentId}/toggle-enabled`, {
@@ -130,15 +114,25 @@ class APIClient {
 
   async updateAgentConfig(agentId, config) {
     return this.request(`/api/client/agents/${agentId}/config`, {
-      method: 'POST',
+      method: 'PUT',
       body: JSON.stringify(config),
     });
   }
 
-  async getAgentStatistics(agentId) {
-    return this.request(`/api/client/agents/${agentId}/statistics`);
+  async retireAgent(agentId, reason) {
+    return this.request(`/api/client/agents/${agentId}/retire`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
   }
 
+  async deleteAgent(agentId) {
+    return this.request(`/api/client/agents/${agentId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Instance APIs
   async getInstances(clientId, filters = {}) {
     const params = new URLSearchParams(
       Object.entries(filters).filter(([_, v]) => v && v !== 'all')
@@ -147,16 +141,8 @@ class APIClient {
     return this.request(`/api/client/${clientId}/instances${query}`);
   }
 
-  async getInstancePricing(instanceId) {
-    return this.request(`/api/client/instances/${instanceId}/pricing`);
-  }
-
-  async getInstanceMetrics(instanceId) {
-    return this.request(`/api/client/instances/${instanceId}/metrics`);
-  }
-
-  async getPriceHistory(instanceId, days = 7, interval = 'hour') {
-    return this.request(`/api/client/instances/${instanceId}/price-history?days=${days}&interval=${interval}`);
+  async getInstanceDetails(instanceId) {
+    return this.request(`/api/client/instances/${instanceId}`);
   }
 
   async forceSwitch(instanceId, body) {
@@ -166,46 +152,40 @@ class APIClient {
     });
   }
 
+  // Savings APIs
   async getSavings(clientId, range = 'monthly') {
     return this.request(`/api/client/${clientId}/savings?range=${range}`);
   }
 
-  async getSwitchHistory(clientId, instanceId = null) {
-    const query = instanceId ? `?instance_id=${instanceId}` : '';
+  // Switch History APIs
+  async getSwitchHistory(clientId, filters = {}) {
+    const params = new URLSearchParams(
+      Object.entries(filters).filter(([_, v]) => v && v !== 'all')
+    );
+    const query = params.toString() ? `?${params}` : '';
     return this.request(`/api/client/${clientId}/switch-history${query}`);
   }
 
-  async exportSavings(clientId) {
-    window.open(`${this.baseUrl}/api/client/${clientId}/export/savings`, '_blank');
+  // Notification APIs
+  async getNotifications(clientId = null, limit = 20) {
+    const params = new URLSearchParams();
+    if (clientId) params.append('client_id', clientId);
+    params.append('limit', limit);
+    return this.request(`/api/notifications?${params}`);
   }
-
-  async exportSwitchHistory(clientId) {
-    window.open(`${this.baseUrl}/api/client/${clientId}/export/switch-history`, '_blank');
+  
+  async markNotificationRead(notifId) {
+    return this.request(`/api/notifications/${notifId}/mark-read`, { 
+      method: 'POST' 
+    });
   }
 
   async healthCheck() {
     return this.request('/health');
   }
-
-  async getInstanceLogs(instanceId, limit = 50) {
-    return this.request(`/api/client/instances/${instanceId}/logs?limit=${limit}`);
-  }
-
-  async getAllInstancesGlobal(filters = {}) {
-    const params = new URLSearchParams(
-      Object.entries(filters).filter(([_, v]) => v && v !== 'all')
-    );
-    const query = params.toString() ? `?${params}` : '';
-    return this.request(`/api/admin/instances${query}`);
-  }
-
-  async getAllAgentsGlobal() {
-    return this.request('/api/admin/agents');
-  }
 }
 
 const api = new APIClient(API_CONFIG.BASE_URL);
-
 // ==============================================================================
 // REUSABLE UI COMPONENTS
 // ==============================================================================
@@ -316,7 +296,7 @@ const CustomTooltip = ({ active, payload, label }) => {
         <p className="font-semibold text-gray-800 mb-2">{label}</p>
         {payload.map((entry, index) => (
           <p key={`item-${index}`} style={{ color: entry.color }} className="text-sm font-medium">
-            {`${entry.name}: ${typeof entry.value === 'number' ? entry.value.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : entry.value}`}
+            {`${entry.name}: ${typeof entry.value === 'number' ? entry.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : entry.value}`}
           </p>
         ))}
       </div>
@@ -349,9 +329,8 @@ const EmptyState = ({ icon, title, description }) => (
     {description && <p className="text-sm text-gray-500 mt-1 text-center px-4">{description}</p>}
   </div>
 );
-
 // ==============================================================================
-// NEW: ADD CLIENT MODAL COMPONENT
+// ADD CLIENT MODAL
 // ==============================================================================
 
 const AddClientModal = ({ onClose, onSuccess }) => {
@@ -398,7 +377,6 @@ const AddClientModal = ({ onClose, onSuccess }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        {/* Modal Header */}
         <div className="p-6 border-b border-gray-200 sticky top-0 bg-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
@@ -422,10 +400,8 @@ const AddClientModal = ({ onClose, onSuccess }) => {
           </div>
         </div>
 
-        {/* Modal Body */}
         <div className="p-6">
           {!createdClient ? (
-            // Creation Form
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -455,7 +431,6 @@ const AddClientModal = ({ onClose, onSuccess }) => {
               )}
             </div>
           ) : (
-            // Success View with Token Display
             <div className="space-y-4">
               <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                 <div className="flex items-center space-x-2 mb-2">
@@ -514,7 +489,7 @@ const AddClientModal = ({ onClose, onSuccess }) => {
                     <div className="flex items-start space-x-2">
                       <AlertTriangle size={16} className="text-yellow-600 flex-shrink-0 mt-0.5" />
                       <p className="text-xs text-yellow-800">
-                        <strong>Important:</strong> Save this token securely! It will be used by the agent to authenticate with the server. You can regenerate it later, but all existing agents will need to be updated.
+                        <strong>Important:</strong> Save this token securely! It will be used by the agent to authenticate with the server.
                       </p>
                     </div>
                   </div>
@@ -524,7 +499,6 @@ const AddClientModal = ({ onClose, onSuccess }) => {
           )}
         </div>
 
-        {/* Modal Footer */}
         <div className="p-6 border-t border-gray-200 flex justify-end space-x-3 sticky bottom-0 bg-white">
           {!createdClient ? (
             <>
@@ -552,7 +526,7 @@ const AddClientModal = ({ onClose, onSuccess }) => {
 };
 
 // ==============================================================================
-// NEW: VIEW TOKEN MODAL COMPONENT
+// VIEW TOKEN MODAL
 // ==============================================================================
 
 const ViewTokenModal = ({ client, onClose, onRegenerate }) => {
@@ -697,7 +671,7 @@ const ViewTokenModal = ({ client, onClose, onRegenerate }) => {
 };
 
 // ==============================================================================
-// NEW: DELETE CLIENT CONFIRMATION MODAL
+// DELETE CLIENT MODAL
 // ==============================================================================
 
 const DeleteClientModal = ({ client, onClose, onSuccess }) => {
@@ -783,6 +757,114 @@ const DeleteClientModal = ({ client, onClose, onSuccess }) => {
     </div>
   );
 };
+
+// ==============================================================================
+// DELETE AGENT MODAL
+// ==============================================================================
+
+const DeleteAgentModal = ({ agent, onClose, onSuccess }) => {
+  const [loading, setLoading] = useState(false);
+  const [action, setAction] = useState('retire'); // 'retire' or 'delete'
+
+  const handleConfirm = async () => {
+    const confirmMsg = action === 'retire' 
+      ? `Retire agent ${agent.id}?\n\nThis will:\n- Mark agent as retired\n- Disable all features\n- Preserve history for reporting\n\nYou can view retired agents by enabling "Show Retired" filter.`
+      : `PERMANENTLY DELETE agent ${agent.id}?\n\nThis will:\n- Remove agent completely\n- Clear all associations\n- Cannot be undone\n\nHistory will be preserved but agent reference will be NULL.`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (action === 'retire') {
+        await api.retireAgent(agent.id, 'Manual retirement via dashboard');
+        alert(`✓ Agent ${agent.id} has been retired successfully.`);
+      } else {
+        await api.deleteAgent(agent.id);
+        alert(`✓ Agent ${agent.id} has been permanently deleted.`);
+      }
+      onSuccess();
+      onClose();
+    } catch (err) {
+      alert(`Failed to ${action} agent: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <div className="bg-orange-100 p-2 rounded-lg">
+              <Trash2 size={24} className="text-orange-600" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-gray-900">Remove Agent</h3>
+              <p className="text-sm text-gray-500 mt-1">Choose removal method</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <p className="text-sm text-gray-700 font-mono">{agent.id}</p>
+
+          <div className="space-y-3">
+            <label className="flex items-start space-x-3 p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors">
+              <input
+                type="radio"
+                name="action"
+                value="retire"
+                checked={action === 'retire'}
+                onChange={(e) => setAction(e.target.value)}
+                className="mt-1"
+              />
+              <div>
+                <p className="font-semibold text-gray-900">Retire (Recommended)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Soft delete - preserves history and can be viewed with filters. Agent will be disabled but data remains intact.
+                </p>
+              </div>
+            </label>
+
+            <label className="flex items-start space-x-3 p-4 border-2 border-red-200 rounded-lg cursor-pointer hover:bg-red-50 transition-colors">
+              <input
+                type="radio"
+                name="action"
+                value="delete"
+                checked={action === 'delete'}
+                onChange={(e) => setAction(e.target.value)}
+                className="mt-1"
+              />
+              <div>
+                <p className="font-semibold text-red-900">Permanent Delete</p>
+                <p className="text-xs text-red-700 mt-1">
+                  Hard delete - removes agent completely. History preserved but agent references will be NULL. Cannot be undone.
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+          <Button variant="outline" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            variant={action === 'retire' ? 'warning' : 'danger'}
+            onClick={handleConfirm}
+            loading={loading}
+            icon={<Trash2 size={16} />}
+          >
+            {action === 'retire' ? 'Retire Agent' : 'Delete Permanently'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
 // ==============================================================================
 // NOTIFICATION PANEL
 // ==============================================================================
@@ -820,15 +902,6 @@ const NotificationPanel = ({ isOpen, onClose, clientId = null }) => {
     }
   };
 
-  const markAllAsRead = async () => {
-    try {
-      await api.markAllNotificationsRead(clientId);
-      setNotifications(prev => prev.map(n => ({...n, isRead: true})));
-    } catch (error) {
-      console.error('Failed to mark all as read:', error);
-    }
-  };
-
   if (!isOpen) return null;
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -844,19 +917,9 @@ const NotificationPanel = ({ isOpen, onClose, clientId = null }) => {
               <p className="text-sm text-gray-500">{unreadCount} unread</p>
             )}
           </div>
-          <div className="flex items-center space-x-2">
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="text-sm text-blue-600 hover:text-blue-800"
-              >
-                Mark all read
-              </button>
-            )}
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-              <X size={20} />
-            </button>
-          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={20} />
+          </button>
         </div>
         
         <div className="flex-1 overflow-y-auto">
@@ -908,451 +971,51 @@ const NotificationPanel = ({ isOpen, onClose, clientId = null }) => {
 };
 
 // ==============================================================================
-// SEARCH RESULTS PANEL
+// INSTANCE DETAIL PANEL WITH MANUAL CONTROLS
 // ==============================================================================
 
-const SearchResultsPanel = ({ isOpen, onClose, query, onSelectResult }) => {
-  const [results, setResults] = useState({ clients: [], instances: [], agents: [] });
-  const [loading, setLoading] = useState(false);
+const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
+  const [instance, setInstance] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [switching, setSwitching] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (isOpen && query && query.length >= 2) {
-      performSearch();
-    } else {
-      setResults({ clients: [], instances: [], agents: [] });
-    }
-  }, [isOpen, query]);
+    loadInstanceDetails();
+  }, [instanceId]);
 
-  const performSearch = async () => {
+  const loadInstanceDetails = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const data = await api.globalSearch(query);
-      setResults(data);
-    } catch (error) {
-      console.error('Search failed:', error);
+      const data = await api.getInstanceDetails(instanceId);
+      setInstance(data);
+    } catch (err) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (!isOpen) return null;
-
-  const totalResults = results.clients.length + results.instances.length + results.agents.length;
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={onClose}></div>
-      <div className="fixed top-20 left-1/2 transform -translate-x-1/2 w-full max-w-2xl bg-white rounded-lg shadow-2xl z-50 max-h-96 overflow-hidden">
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-gray-900">
-              Search Results {query && `for "${query}"`}
-            </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-              <X size={20} />
-            </button>
-          </div>
-          {totalResults > 0 && (
-            <p className="text-sm text-gray-500 mt-1">{totalResults} results found</p>
-          )}
-        </div>
-        
-        <div className="overflow-y-auto max-h-80">
-          {loading ? (
-            <div className="flex justify-center items-center h-40">
-              <LoadingSpinner />
-            </div>
-          ) : totalResults === 0 ? (
-            <div className="p-8">
-              <EmptyState
-                icon={<Search size={48} />}
-                title="No results found"
-                description={query ? `No matches for "${query}"` : 'Enter a search query'}
-              />
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {results.clients.length > 0 && (
-                <div className="p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Clients</h4>
-                  {results.clients.map(item => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        onSelectResult('client', item.id);
-                        onClose();
-                      }}
-                      className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer mb-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                          <p className="text-xs text-gray-500">{item.id}</p>
-                        </div>
-                        <Badge variant={item.status === 'active' ? 'success' : 'danger'}>
-                          {item.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {results.instances.length > 0 && (
-                <div className="p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Instances</h4>
-                  {results.instances.map(item => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        onSelectResult('instance', item.id);
-                        onClose();
-                      }}
-                      className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer mb-2"
-                    >
-                      <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                      <p className="text-xs text-gray-500">{item.client}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {results.agents.length > 0 && (
-                <div className="p-4">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Agents</h4>
-                  {results.agents.map(item => (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        onSelectResult('agent', item.id);
-                        onClose();
-                      }}
-                      className="p-3 hover:bg-gray-50 rounded-lg cursor-pointer mb-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                          <p className="text-xs text-gray-500">{item.client}</p>
-                        </div>
-                        <Badge variant={item.status === 'online' ? 'success' : 'danger'}>
-                          {item.status}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-};
-
-// ==============================================================================
-// SIDEBAR COMPONENT
-// ==============================================================================
-
-const AdminSidebar = ({ clients, onSelectClient, activeClientId, onSelectPage, activePage, isOpen, onClose }) => {
-  const menuItems = [
-    { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
-    { id: 'clients', label: 'Clients', icon: <Users size={18} /> },
-    { id: 'agents', label: 'All Agents', icon: <Server size={18} /> },
-    { id: 'instances', label: 'All Instances', icon: <Zap size={18} /> },
-    { id: 'savings', label: 'Global Savings', icon: <BarChart3 size={18} /> },
-    { id: 'activity', label: 'Activity Log', icon: <History size={18} /> },
-    { id: 'health', label: 'System Health', icon: <Activity size={18} /> },
-  ];
-
-  return (
-    <>
-      {isOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={onClose}
-        />
-      )}
-      
-      <div className={`fixed top-0 left-0 h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white shadow-2xl overflow-y-auto z-50 transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:translate-x-0 w-72`}>
-        <div className="p-6 border-b border-gray-700 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="bg-blue-600 p-2 rounded-lg">
-                <Zap size={24} />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold">SmartDevops</h1>
-                <p className="text-xs text-gray-400">Admin Dashboard</p>
-              </div>
-            </div>
-            <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-white">
-              <X size={24} />
-            </button>
-          </div>
-        </div>
-        
-        <nav className="p-3 flex-shrink-0">
-          <ul className="space-y-1">
-            {menuItems.map(item => {
-              const isActive = activePage === item.id;
-              return (
-                <li key={item.id}>
-                  <button
-                    onClick={() => {
-                      onSelectPage(item.id);
-                      if (window.innerWidth < 1024) onClose();
-                    }}
-                    className={`flex items-center w-full px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                      isActive 
-                        ? 'bg-blue-600 text-white shadow-lg' 
-                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                    }`}
-                  >
-                    {item.icon}
-                    <span className="ml-3">{item.label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-        
-        <div className="p-3 mt-2 border-t border-gray-700 flex-1 overflow-y-auto">
-          <h2 className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-            Active Clients ({clients.length})
-          </h2>
-          <ul className="mt-2 space-y-1">
-            {clients.length === 0 ? (
-              <div className="flex justify-center p-4">
-                <LoadingSpinner size="sm" />
-              </div>
-            ) : (
-              clients.map(client => (
-                <li key={client.id}>
-                  <button
-                    onClick={() => {
-                      onSelectClient(client.id);
-                      if (window.innerWidth < 1024) onClose();
-                    }}
-                    className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-sm transition-all duration-200 ${
-                      activeClientId === client.id 
-                        ? 'bg-blue-600 text-white shadow-lg' 
-                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                    }`}
-                  >
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${client.status === 'active' ? 'bg-green-400' : 'bg-red-400'}`}></div>
-                      <span className="truncate">{client.name}</span>
-                    </div>
-                    <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
-                      {client.instances}
-                    </Badge>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
-        
-        <div className="p-4 border-t border-gray-700 flex-shrink-0">
-          <div className="text-xs text-gray-400 space-y-1">
-            <p>© 2025 SmartDevops</p>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
-// ==============================================================================
-// HEADER COMPONENT
-// ==============================================================================
-
-const AdminHeader = ({ stats, onRefresh, lastRefresh, onMenuToggle }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    loadUnreadCount();
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadUnreadCount = async () => {
-    try {
-      const notifications = await api.getNotifications(null, 50);
-      setUnreadCount(notifications.filter(n => !n.isRead).length);
-    } catch (error) {
-      console.error('Failed to load unread count:', error);
-    }
-  };
-
-  const handleSearchResultSelect = (type, id) => {
-    console.log('Selected:', type, id);
-  };
-
-  return (
-    <>
-      <header className="bg-white border-b border-gray-200 shadow-sm">
-        <div className="p-4 md:p-6">
-          <div className="flex items-center justify-between mb-4 md:mb-6">
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={onMenuToggle}
-                className="lg:hidden text-gray-600 hover:text-gray-900"
-              >
-                <Menu size={24} />
-              </button>
-              <div>
-                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
-                <p className="text-xs md:text-sm text-gray-500 mt-1 hidden sm:block">Real-time monitoring and management</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-2 md:space-x-4">
-              <div className="relative hidden md:block">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onFocus={() => setShowSearch(true)}
-                  className="pl-10 pr-4 py-2.5 w-64 xl:w-80 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                />
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                icon={<RefreshCw size={16} />} 
-                onClick={onRefresh}
-                className="hidden sm:flex"
-              >
-                Refresh
-              </Button>
-              <button 
-                className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                onClick={() => setShowNotifications(true)}
-              >
-                <Bell size={20} />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </button>
-              <div className="hidden sm:flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg">
-                <span className={`w-3 h-3 rounded-full ${stats?.backendHealth === 'Healthy' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
-                <span className="text-sm font-medium text-gray-700">{stats?.backendHealth || 'Loading...'}</span>
-              </div>
-            </div>
-          </div>
-          
-          {stats && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-4">
-              {[
-                { label: 'Accounts', value: stats.totalAccounts, color: 'blue', icon: <Users size={20} /> },
-                { label: 'Agents', value: `${stats.agentsOnline}/${stats.agentsTotal}`, color: 'green', icon: <Server size={20} /> },
-                { label: 'Pools', value: stats.poolsCovered, color: 'purple', icon: <Database size={20} /> },
-                { label: 'Savings', value: `${(stats.totalSavings / 1000).toFixed(1)}k`, color: 'emerald', icon: <DollarSign size={20} /> },
-                { label: 'Switches', value: stats.totalSwitches, color: 'orange', icon: <RefreshCw size={20} /> },
-                { label: 'Auto/Manual', value: `${stats.modelSwitches}/${stats.manualSwitches}`, color: 'cyan', icon: <Activity size={20} /> },
-              ].map((stat, idx) => (
-                <div key={idx} className={`bg-gradient-to-br from-${stat.color}-50 to-${stat.color}-100 p-3 md:p-4 rounded-xl border border-${stat.color}-200`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs text-${stat.color}-600 font-semibold uppercase truncate`}>{stat.label}</p>
-                      <p className={`text-lg md:text-2xl font-bold text-${stat.color}-900 mt-1 truncate`}>{stat.value}</p>
-                    </div>
-                    <div className={`text-${stat.color}-600 flex-shrink-0 ml-2`}>{stat.icon}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {lastRefresh && (
-            <p className="text-xs text-gray-400 mt-4">Last updated: {new Date(lastRefresh).toLocaleTimeString()}</p>
-          )}
-        </div>
-      </header>
-
-      <SearchResultsPanel
-        isOpen={showSearch}
-        onClose={() => setShowSearch(false)}
-        query={searchQuery}
-        onSelectResult={handleSearchResultSelect}
-      />
-
-      <NotificationPanel
-        isOpen={showNotifications}
-        onClose={() => {
-          setShowNotifications(false);
-          loadUnreadCount();
-        }}
-      />
-    </>
-  );
-};
-// ==============================================================================
-// INSTANCE DETAIL PANEL WITH MANUAL CONTROLS
-// ==============================================================================
-
-const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
-  const [pricing, setPricing] = useState(null);
-  const [metrics, setMetrics] = useState(null);
-  const [priceHistory, setPriceHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [switching, setSwitching] = useState(null);
-  const [error, setError] = useState(null);
-  const [showFallback, setShowFallback] = useState(false);
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [pricingData, metricsData] = await Promise.all([
-          api.getInstancePricing(instanceId),
-          api.getInstanceMetrics(instanceId)
-        ]);
-        setPricing(pricingData);
-        setMetrics(metricsData);
-        
-        try {
-          const historyData = await api.getPriceHistory(instanceId, 7, 'hour');
-          setPriceHistory(historyData);
-        } catch (histError) {
-          console.warn('Price history not available:', histError);
-          setPriceHistory([]);
-        }
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [instanceId]);
-
-  const handleForceSwitch = async (body) => {
-    const target = body.target === 'ondemand' ? 'On-Demand' : `Pool ${body.pool_id}`;
+  const handleForceSwitch = async (targetMode, poolId = null) => {
+    const target = targetMode === 'ondemand' ? 'On-Demand' : `Spot Pool ${poolId}`;
     
-    if (!window.confirm(`Force switch to ${target}?\n\nThis will queue a command for the agent to execute on its next check cycle.`)) {
+    if (!window.confirm(`Force switch to ${target}?\n\nThis will queue a high-priority command for the agent to execute.`)) {
       return;
     }
 
-    setSwitching(body.target === 'ondemand' ? 'ondemand' : body.pool_id);
+    setSwitching(targetMode === 'ondemand' ? 'ondemand' : poolId);
     try {
+      const body = {
+        target: targetMode,
+        pool_id: poolId,
+        priority: 100
+      };
       await api.forceSwitch(instanceId, body);
-      alert(`✓ Switch command queued successfully!\n\nTarget: ${target}\n\nThe agent will execute this switch within ~1 minute.`);
+      alert(`✓ Switch command queued successfully!\n\nTarget: ${target}\n\nThe agent will execute this switch within ~15 seconds.`);
       if (onClose) onClose();
     } catch (err) {
-      alert(`✗ Failed to queue switch: ${err.message}\n\nPlease ensure the agent is online and try again.`);
+      alert(`✗ Failed to queue switch: ${err.message}`);
     } finally {
       setSwitching(null);
     }
@@ -1372,206 +1035,153 @@ const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
     return (
       <tr className="bg-red-50">
         <td colSpan="10" className="p-6">
-          <ErrorMessage message={error} />
+          <ErrorMessage message={error} onRetry={loadInstanceDetails} />
         </td>
       </tr>
     );
   }
 
+  if (!instance) {
+    return null;
+  }
+
   return (
     <tr className="bg-gray-50">
       <td colSpan="10" className="p-4 md:p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          {/* Metrics Column */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          {/* Instance Details */}
           <div className="space-y-4">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="text-md font-bold text-gray-900">Instance Metrics</h4>
+              <h4 className="text-md font-bold text-gray-900">Instance Details</h4>
               <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                 <X size={18} />
               </button>
             </div>
-            {metrics && (
-              <div className="space-y-3">
-                <div className="bg-white p-4 rounded-lg border border-gray-200">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs text-gray-500">Uptime</p>
-                    <Clock size={14} className="text-gray-400" />
+            
+            <div className="bg-white p-4 rounded-lg border border-gray-200 space-y-3">
+              <div>
+                <p className="text-xs text-gray-500">Instance ID</p>
+                <p className="text-sm font-mono text-gray-900">{instance.id}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Type / Region</p>
+                <p className="text-sm text-gray-900">{instance.instanceType} / {instance.region}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Current Mode</p>
+                <Badge variant={instance.currentMode === 'ondemand' ? 'danger' : 'success'}>
+                  {instance.currentMode}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Current Price</p>
+                <p className="text-lg font-bold text-gray-900">${instance.spotPrice?.toFixed(4) || '0.0000'}/hr</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">On-Demand Price</p>
+                <p className="text-sm text-gray-900">${instance.ondemandPrice?.toFixed(4) || '0.0000'}/hr</p>
+              </div>
+              {instance.lastSwitchAt && (
+                <div>
+                  <p className="text-xs text-gray-500">Last Switch</p>
+                  <p className="text-sm text-gray-900">{new Date(instance.lastSwitchAt).toLocaleString()}</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Manual Controls */}
+          <div className="space-y-4">
+            <h4 className="text-md font-bold text-gray-900">Manual Controls</h4>
+            
+            <div className="space-y-3">
+              {/* On-Demand Option */}
+              <div className="bg-white p-4 rounded-lg border-2 border-red-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-red-700">Switch to On-Demand</p>
+                    <p className="text-xs text-gray-500 mt-1">Guaranteed capacity</p>
+                    <p className="text-lg font-bold text-gray-900 mt-2">
+                      ${instance.ondemandPrice?.toFixed(4) || '0.0000'}/hr
+                    </p>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">{metrics.uptimeHours}h</p>
-                </div>
-                
-                <div className="bg-white p-4 rounded-lg border border-gray-200">
-                  <p className="text-xs text-gray-500 mb-1">Total Switches</p>
-                  <p className="text-2xl font-bold text-gray-900">{metrics.totalSwitches}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {metrics.switchesLast7Days} in last 7 days
-                  </p>
-                </div>
-                
-                <div className="bg-white p-4 rounded-lg border-2 border-green-200 bg-green-50">
-                  <p className="text-xs text-green-600 font-semibold mb-1">Total Savings</p>
-                  <p className="text-2xl font-bold text-green-700">
-                    ${metrics.totalSavings.toFixed(2)}
-                  </p>
-                  <p className="text-xs text-green-600 mt-1">
-                    ${(metrics.savingsLast30Days || 0).toFixed(2)} last 30 days
-                  </p>
-                </div>
-                
-                <div className="bg-white p-4 rounded-lg border border-gray-200">
-                  <p className="text-xs text-gray-500 mb-1">Current Prices</p>
-                  <div className="space-y-2 mt-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Spot:</span>
-                      <span className="font-bold text-gray-900">${metrics.spotPrice.toFixed(4)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">On-Demand:</span>
-                      <span className="font-bold text-gray-900">${metrics.onDemandPrice.toFixed(4)}</span>
-                    </div>
-                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => handleForceSwitch('ondemand')}
+                    loading={switching === 'ondemand'}
+                    disabled={instance.currentMode === 'ondemand'}
+                  >
+                    {instance.currentMode === 'ondemand' ? 'Current' : 'Switch'}
+                  </Button>
                 </div>
               </div>
-            )}
-          </div>
-          
-          {/* Available Options Column */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-md font-bold text-gray-900">Available Options</h4>
-              <button
-                onClick={() => setShowFallback(!showFallback)}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-              >
-                {showFallback ? 'Hide' : 'Show'} Fallback
-              </button>
-            </div>
-            {pricing && (
-              <>
-                {showFallback && (
-                  <div className="bg-white p-4 rounded-lg border-2 border-red-200 shadow-sm">
-                    <div className="flex justify-between items-center mb-3">
-                      <div>
-                        <p className="text-sm font-semibold text-red-700">On-Demand (Fallback)</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-1">
-                          ${pricing.onDemand.price.toFixed(4)}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">Guaranteed availability</p>
-                      </div>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleForceSwitch({ target: 'ondemand' })}
-                        loading={switching === 'ondemand'}
-                      >
-                        Switch
-                      </Button>
-                    </div>
+
+              {/* Spot Option */}
+              <div className="bg-white p-4 rounded-lg border-2 border-green-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-semibold text-green-700">Switch to Spot</p>
+                    <p className="text-xs text-gray-500 mt-1">Best available pool</p>
+                    <p className="text-lg font-bold text-gray-900 mt-2">
+                      ${instance.spotPrice?.toFixed(4) || '0.0000'}/hr
+                    </p>
+                    {instance.ondemandPrice > 0 && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Save {(((instance.ondemandPrice - instance.spotPrice) / instance.ondemandPrice) * 100).toFixed(1)}%
+                      </p>
+                    )}
                   </div>
-                )}
-                
-                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                  <p className="text-xs font-semibold text-gray-600 uppercase mb-2">
-                    Spot Pools ({pricing.pools.length})
-                  </p>
-                  {pricing.pools.map((pool, idx) => (
-                    <div 
-                      key={pool.id} 
-                      className={`bg-white p-4 rounded-lg border-2 transition-all ${
-                        idx === 0 
-                          ? 'border-blue-300 shadow-md' 
-                          : 'border-gray-200 hover:border-blue-200'
-                      }`}
-                    >
+                  <Button
+                    variant="success"
+                    size="sm"
+                    onClick={() => handleForceSwitch('spot', instance.currentPoolId)}
+                    loading={switching === instance.currentPoolId}
+                    disabled={instance.currentMode === 'spot'}
+                  >
+                    {instance.currentMode === 'spot' ? 'Current' : 'Switch'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <div className="flex items-start space-x-2">
+                <AlertCircle size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-800">
+                  Manual switches have high priority and will be executed by the agent within 15 seconds.
+                </p>
+              </div>
+            </div>
+
+            {/* Recent Switches */}
+            {instance.recentSwitches && instance.recentSwitches.length > 0 && (
+              <div>
+                <h5 className="text-sm font-semibold text-gray-700 mb-2">Recent Switches</h5>
+                <div className="space-y-2">
+                  {instance.recentSwitches.map(sw => (
+                    <div key={sw.id} className="bg-white p-3 rounded border border-gray-200 text-xs">
                       <div className="flex justify-between items-center">
-                        <div className="flex-1 min-w-0">
-                          {idx === 0 && (
-                            <Badge variant="success" className="mb-2">Best Price</Badge>
-                          )}
-                          <p className="text-xs font-mono text-blue-600 mb-1 truncate">
-                            {pool.id}
-                          </p>
-                          <p className="text-xl font-bold text-gray-900">
-                            ${pool.price.toFixed(4)}
-                          </p>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <p className="text-xs font-semibold text-green-600">
-                              {pool.savings.toFixed(1)}% savings
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              ${(pricing.onDemand.price - pool.price).toFixed(4)}/hr
-                            </p>
-                          </div>
+                        <div className="flex items-center space-x-2">
+                          <Badge variant={sw.fromMode === 'ondemand' ? 'danger' : 'success'}>
+                            {sw.fromMode}
+                          </Badge>
+                          <span className="text-gray-400">→</span>
+                          <Badge variant={sw.toMode === 'ondemand' ? 'danger' : 'success'}>
+                            {sw.toMode}
+                          </Badge>
                         </div>
-                        <Button
-                          variant={idx === 0 ? 'success' : 'primary'}
-                          size="sm"
-                          onClick={() => handleForceSwitch({ target: 'pool', pool_id: pool.id })}
-                          loading={switching === pool.id}
-                        >
-                          Switch
-                        </Button>
+                        <span className="text-green-600 font-semibold">
+                          ${sw.savingsImpact?.toFixed(4) || '0.0000'}/hr
+                        </span>
                       </div>
+                      <p className="text-gray-500 mt-1">
+                        {new Date(sw.timestamp).toLocaleString()}
+                      </p>
                     </div>
                   ))}
                 </div>
-              </>
-            )}
-          </div>
-          
-          {/* Price History Chart Column */}
-          <div className="bg-white p-4 rounded-lg border border-gray-200">
-            <h4 className="text-md font-bold text-gray-900 mb-4">
-              Price History (7 Days)
-            </h4>
-            {priceHistory.length > 0 ? (
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={priceHistory}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="time" 
-                    tick={{ fontSize: 10 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={80}
-                  />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="avgPrice" 
-                    stroke="#3b82f6" 
-                    strokeWidth={2} 
-                    name="Avg Price" 
-                    dot={false}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="minPrice" 
-                    stroke="#10b981" 
-                    strokeWidth={1} 
-                    strokeDasharray="3 3"
-                    name="Min Price" 
-                    dot={false}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="maxPrice" 
-                    stroke="#ef4444" 
-                    strokeWidth={1} 
-                    strokeDasharray="3 3"
-                    name="Max Price" 
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState
-                icon={<BarChart3 size={48} />}
-                title="No Price History"
-                description="Price history data is not available for this instance"
-              />
+              </div>
             )}
           </div>
         </div>
@@ -1586,10 +1196,10 @@ const InstanceDetailPanel = ({ instanceId, clientId, onClose }) => {
 
 const AgentConfigModal = ({ agent, onClose, onSave }) => {
   const [config, setConfig] = useState({
-    min_savings_percent: 15,
-    risk_threshold: 0.3,
-    max_switches_per_week: 10,
-    min_pool_duration_hours: 2,
+    min_savings_percent: 10,
+    risk_threshold: 0.7,
+    max_switches_per_week: 3,
+    min_pool_duration_hours: 24,
   });
   const [saving, setSaving] = useState(false);
 
@@ -1597,6 +1207,7 @@ const AgentConfigModal = ({ agent, onClose, onSave }) => {
     setSaving(true);
     try {
       await api.updateAgentConfig(agent.id, config);
+      alert('✓ Configuration saved successfully!');
       onSave();
       onClose();
     } catch (error) {
@@ -1679,7 +1290,7 @@ const AgentConfigModal = ({ agent, onClose, onSave }) => {
               onChange={(e) => setConfig({...config, min_pool_duration_hours: parseInt(e.target.value)})}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               min="1"
-              max="24"
+              max="168"
             />
             <p className="text-xs text-gray-500 mt-1">Minimum time before considering another switch</p>
           </div>
@@ -1698,47 +1309,270 @@ const AgentConfigModal = ({ agent, onClose, onSave }) => {
   );
 };
 // ==============================================================================
-// CLIENT DETAIL TABS WITH ENHANCED CHARTS
+// SIDEBAR COMPONENT
+// ==============================================================================
+
+const AdminSidebar = ({ clients, onSelectClient, activeClientId, onSelectPage, activePage, isOpen, onClose }) => {
+  const menuItems = [
+    { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={18} /> },
+    { id: 'clients', label: 'Clients', icon: <Users size={18} /> },
+    { id: 'agents', label: 'All Agents', icon: <Server size={18} /> },
+    { id: 'instances', label: 'All Instances', icon: <Zap size={18} /> },
+    { id: 'savings', label: 'Global Savings', icon: <BarChart3 size={18} /> },
+    { id: 'history', label: 'Switch History', icon: <History size={18} /> },
+  ];
+
+  return (
+    <>
+      {isOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      <div className={`fixed top-0 left-0 h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white shadow-2xl overflow-y-auto z-50 transition-transform duration-300 ease-in-out ${
+        isOpen ? 'translate-x-0' : '-translate-x-full'
+      } lg:translate-x-0 w-72`}>
+        <div className="p-6 border-b border-gray-700 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="bg-blue-600 p-2 rounded-lg">
+                <Zap size={24} />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold">Spot Optimizer</h1>
+                <p className="text-xs text-gray-400">Admin Dashboard</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="lg:hidden text-gray-400 hover:text-white">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+        
+        <nav className="p-3 flex-shrink-0">
+          <ul className="space-y-1">
+            {menuItems.map(item => {
+              const isActive = activePage === item.id;
+              return (
+                <li key={item.id}>
+                  <button
+                    onClick={() => {
+                      onSelectPage(item.id);
+                      if (window.innerWidth < 1024) onClose();
+                    }}
+                    className={`flex items-center w-full px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      isActive 
+                        ? 'bg-blue-600 text-white shadow-lg' 
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="ml-3">{item.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+        
+        <div className="p-3 mt-2 border-t border-gray-700 flex-1 overflow-y-auto">
+          <h2 className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Active Clients ({clients.length})
+          </h2>
+          <ul className="mt-2 space-y-1">
+            {clients.length === 0 ? (
+              <div className="flex justify-center p-4">
+                <LoadingSpinner size="sm" />
+              </div>
+            ) : (
+              clients.map(client => (
+                <li key={client.id}>
+                  <button
+                    onClick={() => {
+                      onSelectClient(client.id);
+                      if (window.innerWidth < 1024) onClose();
+                    }}
+                    className={`flex items-center justify-between w-full px-4 py-3 rounded-lg text-sm transition-all duration-200 ${
+                      activeClientId === client.id 
+                        ? 'bg-blue-600 text-white shadow-lg' 
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3 flex-1 min-w-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${client.status === 'active' ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                      <span className="truncate">{client.name}</span>
+                    </div>
+                    <Badge variant={client.agentsOnline > 0 ? 'success' : 'danger'}>
+                      {client.agentsOnline || 0}
+                    </Badge>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+        
+        <div className="p-4 border-t border-gray-700 flex-shrink-0">
+          <div className="text-xs text-gray-400 space-y-1">
+            <p>© 2025 Spot Optimizer</p>
+            <p>Backend v2.4.0</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ==============================================================================
+// HEADER COMPONENT
+// ==============================================================================
+
+const AdminHeader = ({ stats, onRefresh, lastRefresh, onMenuToggle, refreshing }) => {
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    loadUnreadCount();
+    const interval = setInterval(loadUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadUnreadCount = async () => {
+    try {
+      const notifications = await api.getNotifications(null, 50);
+      setUnreadCount(notifications.filter(n => !n.isRead).length);
+    } catch (error) {
+      console.error('Failed to load unread count:', error);
+    }
+  };
+
+  return (
+    <>
+      <header className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4 md:mb-6">
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={onMenuToggle}
+                className="lg:hidden text-gray-600 hover:text-gray-900"
+              >
+                <Menu size={24} />
+              </button>
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold text-gray-900">Dashboard Overview</h2>
+                <p className="text-xs md:text-sm text-gray-500 mt-1 hidden sm:block">Real-time monitoring and management</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2 md:space-x-4">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                icon={<RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />} 
+                onClick={onRefresh}
+                loading={refreshing}
+                className="hidden sm:flex"
+              >
+                Refresh
+              </Button>
+              <button 
+                className="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                onClick={() => setShowNotifications(true)}
+              >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              <div className="hidden sm:flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-lg">
+                <span className={`w-3 h-3 rounded-full ${stats?.backendHealth === 'healthy' ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                <span className="text-sm font-medium text-gray-700 capitalize">{stats?.backendHealth || 'Loading...'}</span>
+              </div>
+            </div>
+          </div>
+          
+          {stats && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-4">
+              {[
+                { label: 'Clients', value: stats.totalClients, color: 'blue', icon: <Users size={20} /> },
+                { label: 'Agents', value: `${stats.agentsOnline}/${stats.agentsTotal}`, color: 'green', icon: <Server size={20} /> },
+                { label: 'Pools', value: stats.poolsCovered, color: 'purple', icon: <Database size={20} /> },
+                { label: 'Savings', value: `$${(stats.totalSavings / 1000).toFixed(1)}k`, color: 'emerald', icon: <DollarSign size={20} /> },
+                { label: 'Switches', value: stats.totalSwitches, color: 'orange', icon: <RefreshCw size={20} /> },
+                { label: 'Success', value: `${stats.completedSwitches}/${stats.totalSwitches}`, color: 'cyan', icon: <CheckCircle size={20} /> },
+              ].map((stat, idx) => (
+                <div key={idx} className={`bg-gradient-to-br from-${stat.color}-50 to-${stat.color}-100 p-3 md:p-4 rounded-xl border border-${stat.color}-200`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs text-${stat.color}-600 font-semibold uppercase truncate`}>{stat.label}</p>
+                      <p className={`text-lg md:text-2xl font-bold text-${stat.color}-900 mt-1 truncate`}>{stat.value}</p>
+                    </div>
+                    <div className={`text-${stat.color}-600 flex-shrink-0 ml-2`}>{stat.icon}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {lastRefresh && (
+            <p className="text-xs text-gray-400 mt-4">Last updated: {new Date(lastRefresh).toLocaleTimeString()}</p>
+          )}
+        </div>
+      </header>
+
+      <NotificationPanel
+        isOpen={showNotifications}
+        onClose={() => {
+          setShowNotifications(false);
+          loadUnreadCount();
+        }}
+      />
+    </>
+  );
+};
+// ==============================================================================
+// CLIENT OVERVIEW TAB
 // ==============================================================================
 
 const ClientOverviewTab = ({ clientId }) => {
   const [client, setClient] = useState(null);
   const [history, setHistory] = useState([]);
   const [savingsData, setSavingsData] = useState([]);
-  const [chartData, setChartData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [clientData, historyData, savings, charts] = await Promise.all([
-          api.getClientDetails(clientId),
-          api.getSwitchHistory(clientId),
-          api.getSavings(clientId, 'monthly'),
-          api.getClientChartData(clientId)
-        ]);
-        setClient(clientData);
-        setHistory(historyData.slice(0, 10));
-        setSavingsData(savings);
-        setChartData(charts);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, [clientId]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [clientData, historyData, savings] = await Promise.all([
+        api.getClientDetails(clientId),
+        api.getSwitchHistory(clientId, { limit: 10 }),
+        api.getSavings(clientId, 'monthly')
+      ]);
+      setClient(clientData);
+      setHistory(historyData);
+      setSavingsData(savings);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
   }
 
   if (error) {
-    return <ErrorMessage message={error} />;
+    return <ErrorMessage message={error} onRetry={loadData} />;
   }
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
@@ -1748,10 +1582,10 @@ const ClientOverviewTab = ({ clientId }) => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatCard 
-          title="Instances" 
-          value={client.instances} 
+          title="Active Instances" 
+          value={client.instancesActive} 
           icon={<Zap size={24} />}
-          subtitle="Active monitoring"
+          subtitle={`${client.instancesSpot} on Spot`}
         />
         <StatCard 
           title="Agents" 
@@ -1760,87 +1594,48 @@ const ClientOverviewTab = ({ clientId }) => {
           subtitle="Online/Total"
         />
         <StatCard 
-          title="Monthly Savings" 
-          value={`${(client.totalSavings / 12 / 1000).toFixed(1)}k`}
-          icon={<BarChart3 size={24} />}
-          subtitle="Average per month"
+          title="Total Savings" 
+          value={`$${(client.totalSavings / 1000).toFixed(1)}k`}
+          icon={<DollarSign size={24} />}
+          subtitle="Lifetime"
         />
         <StatCard 
-          title="Lifetime Savings" 
-          value={`${(client.totalSavings / 1000).toFixed(1)}k`}
-          icon={<TrendingUp size={24} />}
-          subtitle="Total accumulated"
+          title="Last Sync" 
+          value={client.lastSync ? new Date(client.lastSync).toLocaleTimeString() : 'Never'}
+          icon={<Clock size={24} />}
+          subtitle={client.lastSync ? new Date(client.lastSync).toLocaleDateString() : ''}
         />
       </div>
       
-      {/* Charts Grid */}
-      {chartData && (
+      {/* Charts */}
+      {savingsData.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Savings Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={chartData.savingsTrend}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend />
-                <Area type="monotone" dataKey="baseline" stackId="1" stroke="#ef4444" fill="#fecaca" name="Baseline Cost" />
-                <Area type="monotone" dataKey="actual" stackId="1" stroke="#3b82f6" fill="#bfdbfe" name="Actual Cost" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Instance Mode Distribution</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData.modeDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ mode, count }) => `${mode}: ${count}`}
-                  outerRadius={100}
-                  fill="#8884d8"
-                  dataKey="count"
-                >
-                  {chartData.modeDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Switch Frequency (30 Days)</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData.switchFrequency}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} angle={-45} textAnchor="end" height={80} />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="switches" stroke="#8b5cf6" strokeWidth={2} name="Switches" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Monthly Cost Comparison</h3>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Monthly Savings</h3>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={savingsData.slice(0, 6)}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Legend />
-                <Bar dataKey="onDemandCost" fill="#ef4444" name="On-Demand" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="modelCost" fill="#10b981" name="Optimized" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="savings" fill="#10b981" radius={[8, 8, 0, 0]} name="Savings" />
               </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Cost Comparison</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={savingsData.slice(0, 6)}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                <Tooltip content={<CustomTooltip />} />
+                <Legend />
+                <Area type="monotone" dataKey="onDemandCost" stackId="1" stroke="#ef4444" fill="#fecaca" name="On-Demand" />
+                <Area type="monotone" dataKey="actualCost" stackId="1" stroke="#3b82f6" fill="#bfdbfe" name="Actual" />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -1848,7 +1643,12 @@ const ClientOverviewTab = ({ clientId }) => {
       
       {/* Recent Switch History */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Switch History</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-bold text-gray-900">Recent Switch History</h3>
+          <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={loadData}>
+            Refresh
+          </Button>
+        </div>
         {history.length === 0 ? (
           <EmptyState
             icon={<History size={48} />}
@@ -1862,7 +1662,7 @@ const ClientOverviewTab = ({ clientId }) => {
                 <tr className="border-b border-gray-200">
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Time</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instance</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">From → To</th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Transition</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Trigger</th>
                   <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Impact</th>
                 </tr>
@@ -1873,7 +1673,7 @@ const ClientOverviewTab = ({ clientId }) => {
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {new Date(sw.timestamp).toLocaleString()}
                     </td>
-                    <td className="py-3 px-4 text-sm font-mono text-gray-500">{sw.instanceId}</td>
+                    <td className="py-3 px-4 text-sm font-mono text-gray-500">{sw.newInstanceId}</td>
                     <td className="py-3 px-4 text-sm">
                       <div className="flex items-center space-x-2">
                         <Badge variant={sw.fromMode === 'ondemand' ? 'danger' : 'success'}>
@@ -1892,7 +1692,7 @@ const ClientOverviewTab = ({ clientId }) => {
                     </td>
                     <td className="py-3 px-4 text-sm font-bold">
                       <span className={sw.savingsImpact >= 0 ? 'text-green-600' : 'text-red-600'}>
-                        ${sw.savingsImpact.toFixed(4)}
+                        ${sw.savingsImpact?.toFixed(4) || '0.0000'}/hr
                       </span>
                     </td>
                   </tr>
@@ -1906,25 +1706,31 @@ const ClientOverviewTab = ({ clientId }) => {
   );
 };
 
+// ==============================================================================
+// CLIENT AGENTS TAB
+// ==============================================================================
+
 const ClientAgentsTab = ({ clientId }) => {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [includeRetired, setIncludeRetired] = useState(false);
   const [error, setError] = useState(null);
 
   const loadAgents = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getAgents(clientId);
+      const data = await api.getAgents(clientId, includeRetired);
       setAgents(data);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, includeRetired]);
 
   useEffect(() => {
     loadAgents();
@@ -1959,6 +1765,11 @@ const ClientAgentsTab = ({ clientId }) => {
     setShowConfigModal(true);
   };
 
+  const openDeleteModal = (agent) => {
+    setSelectedAgent(agent);
+    setShowDeleteModal(true);
+  };
+
   if (loading) {
     return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
   }
@@ -1971,25 +1782,43 @@ const ClientAgentsTab = ({ clientId }) => {
     <>
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-gray-900">Agents Management</h3>
-          <Badge variant="info">{agents.length} Total</Badge>
+          <div className="flex items-center space-x-4">
+            <h3 className="text-lg font-bold text-gray-900">Agents Management</h3>
+            <label className="flex items-center space-x-2 text-sm text-gray-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeRetired}
+                onChange={(e) => setIncludeRetired(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>Show Retired</span>
+            </label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Badge variant="info">{agents.length} Total</Badge>
+            <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={loadAgents}>
+              Refresh
+            </Button>
+          </div>
         </div>
         
         {agents.length === 0 ? (
           <EmptyState
             icon={<Server size={48} />}
             title="No Agents Found"
-            description="No agents are registered for this client"
+            description={includeRetired ? "No agents (including retired) are registered" : "No active agents are registered for this client"}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {agents.map(agent => (
-              <div key={agent.id} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-all">
+              <div key={agent.id} className={`border rounded-lg p-5 hover:shadow-md transition-all ${
+                agent.retired ? 'border-gray-300 bg-gray-50' : 'border-gray-200'
+              }`}>
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-3 mb-2">
                       <h4 className="font-mono text-sm font-bold text-gray-900 truncate">{agent.id}</h4>
-                      {agent.status === 'online' ? (
+                      {agent.status === 'online' && !agent.retired ? (
                         <CheckCircle size={18} className="text-green-500 flex-shrink-0" />
                       ) : (
                         <XCircle size={18} className="text-red-500 flex-shrink-0" />
@@ -1999,53 +1828,70 @@ const ClientAgentsTab = ({ clientId }) => {
                       Last heartbeat: {agent.lastHeartbeat ? new Date(agent.lastHeartbeat).toLocaleString() : 'Never'}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      Managing {agent.instanceCount} instance{agent.instanceCount !== 1 ? 's' : ''}
+                      Managing {agent.activeInstances} active instance{agent.activeInstances !== 1 ? 's' : ''}
                     </p>
+                    {agent.retired && (
+                      <p className="text-xs text-orange-600 mt-1 font-semibold">
+                        Retired: {agent.retirementReason || 'No reason provided'}
+                      </p>
+                    )}
                   </div>
-                  <Badge variant={agent.enabled ? 'success' : 'danger'}>
-                    {agent.enabled ? 'Enabled' : 'Disabled'}
+                  <Badge variant={agent.enabled && !agent.retired ? 'success' : 'danger'}>
+                    {agent.retired ? 'Retired' : (agent.enabled ? 'Enabled' : 'Disabled')}
                   </Badge>
                 </div>
                 
-                <div className="space-y-3 mb-4">
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm font-medium text-gray-700">Auto Switch</span>
-                    <ToggleSwitch
-                      enabled={agent.auto_switch_enabled}
-                      onChange={() => handleSettingToggle(agent.id, 'auto_switch_enabled', agent.auto_switch_enabled)}
-                      label="Auto Switch"
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <span className="text-sm font-medium text-gray-700">Auto Terminate</span>
-                    <ToggleSwitch
-                      enabled={agent.auto_terminate_enabled}
-                      onChange={() => handleSettingToggle(agent.id, 'auto_terminate_enabled', agent.auto_terminate_enabled)}
-                      label="Auto Terminate"
-                    />
-                  </div>
-                </div>
-                
-                <div className="flex space-x-2">
-                  <Button
-                    variant={agent.enabled ? 'danger' : 'success'}
-                    size="sm"
-                    onClick={() => handleToggle(agent.id, agent.enabled)}
-                    icon={agent.enabled ? <PowerOff size={14} /> : <Power size={14} />}
-                    className="flex-1"
-                  >
-                    {agent.enabled ? 'Disable' : 'Enable'}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openConfigModal(agent)}
-                    icon={<Settings size={14} />}
-                  >
-                    Configure
-                  </Button>
-                </div>
+                {!agent.retired && (
+                  <>
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <span className="text-sm font-medium text-gray-700">Auto Switch</span>
+                        <ToggleSwitch
+                          enabled={agent.autoSwitchEnabled}
+                          onChange={() => handleSettingToggle(agent.id, 'auto_switch_enabled', agent.autoSwitchEnabled)}
+                          label="Auto Switch"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <span className="text-sm font-medium text-gray-700">Auto Terminate</span>
+                        <ToggleSwitch
+                          enabled={agent.autoTerminateEnabled}
+                          onChange={() => handleSettingToggle(agent.id, 'auto_terminate_enabled', agent.autoTerminateEnabled)}
+                          label="Auto Terminate"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="flex space-x-2">
+                      <Button
+                        variant={agent.enabled ? 'danger' : 'success'}
+                        size="sm"
+                        onClick={() => handleToggle(agent.id, agent.enabled)}
+                        icon={agent.enabled ? <PowerOff size={14} /> : <Power size={14} />}
+                        className="flex-1"
+                      >
+                        {agent.enabled ? 'Disable' : 'Enable'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openConfigModal(agent)}
+                        icon={<Settings size={14} />}
+                      >
+                        Config
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() => openDeleteModal(agent)}
+                        icon={<Trash2 size={14} />}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             ))}
           </div>
@@ -2055,19 +1901,36 @@ const ClientAgentsTab = ({ clientId }) => {
       {showConfigModal && selectedAgent && (
         <AgentConfigModal
           agent={selectedAgent}
-          onClose={() => setShowConfigModal(false)}
+          onClose={() => {
+            setShowConfigModal(false);
+            setSelectedAgent(null);
+          }}
           onSave={loadAgents}
+        />
+      )}
+
+      {showDeleteModal && selectedAgent && (
+        <DeleteAgentModal
+          agent={selectedAgent}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedAgent(null);
+          }}
+          onSuccess={loadAgents}
         />
       )}
     </>
   );
 };
+// ==============================================================================
+// CLIENT INSTANCES TAB
+// ==============================================================================
 
 const ClientInstancesTab = ({ clientId }) => {
   const [instances, setInstances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedInstanceId, setSelectedInstanceId] = useState(null);
-  const [filters, setFilters] = useState({ status: 'all', mode: 'all', search: '' });
+  const [filters, setFilters] = useState({ status: 'active', mode: 'all', search: '' });
   const [error, setError] = useState(null);
 
   const loadInstances = useCallback(async () => {
@@ -2146,10 +2009,9 @@ const ClientInstancesTab = ({ clientId }) => {
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase w-10"></th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Instance ID</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">AZ</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Region/AZ</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Mode</th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Pool</th>
-                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Current Price</th>
+                <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Price</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Savings</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Last Switch</th>
                 <th className="py-3 px-4 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
@@ -2158,13 +2020,13 @@ const ClientInstancesTab = ({ clientId }) => {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan="10" className="text-center py-8">
+                  <td colSpan="9" className="text-center py-8">
                     <LoadingSpinner />
                   </td>
                 </tr>
               ) : instances.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="text-center py-8">
+                  <td colSpan="9" className="text-center py-8">
                     <EmptyState
                       icon={<Zap size={48} />}
                       title="No Instances Found"
@@ -2189,18 +2051,17 @@ const ClientInstancesTab = ({ clientId }) => {
                         <span className="text-sm font-mono text-gray-700">{inst.id}</span>
                       </td>
                       <td className="py-4 px-4 text-sm text-gray-700">{inst.type}</td>
-                      <td className="py-4 px-4 text-sm text-gray-500">{inst.az}</td>
+                      <td className="py-4 px-4 text-sm text-gray-500">{inst.region}/{inst.az}</td>
                       <td className="py-4 px-4">
                         <Badge variant={inst.mode === 'ondemand' ? 'danger' : 'success'}>
                           {inst.mode}
                         </Badge>
                       </td>
-                      <td className="py-4 px-4 text-sm font-mono text-gray-500">{inst.poolId}</td>
                       <td className="py-4 px-4 text-sm font-semibold text-gray-900">
-                        ${inst.spotPrice.toFixed(4)}
+                        ${inst.spotPrice?.toFixed(4) || '0.0000'}
                       </td>
                       <td className="py-4 px-4 text-sm font-bold text-green-600">
-                        {(((inst.onDemandPrice - inst.spotPrice) / inst.onDemandPrice) * 100).toFixed(1)}%
+                        {inst.onDemandPrice > 0 ? (((inst.onDemandPrice - inst.spotPrice) / inst.onDemandPrice) * 100).toFixed(1) : 0}%
                       </td>
                       <td className="py-4 px-4 text-sm text-gray-500">
                         {inst.lastSwitch ? new Date(inst.lastSwitch).toLocaleString() : 'Never'}
@@ -2231,6 +2092,11 @@ const ClientInstancesTab = ({ clientId }) => {
     </div>
   );
 };
+
+// ==============================================================================
+// CLIENT SAVINGS TAB
+// ==============================================================================
+
 const ClientSavingsTab = ({ clientId }) => {
   const [savingsData, setSavingsData] = useState([]);
   const [totalSavings, setTotalSavings] = useState(0);
@@ -2238,31 +2104,32 @@ const ClientSavingsTab = ({ clientId }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [data, clientData] = await Promise.all([
-          api.getSavings(clientId, 'monthly'),
-          api.getClientDetails(clientId)
-        ]);
-        setSavingsData(data);
-        setTotalSavings(clientData.totalSavings);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, [clientId]);
+
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [data, clientData] = await Promise.all([
+        api.getSavings(clientId, 'monthly'),
+        api.getClientDetails(clientId)
+      ]);
+      setSavingsData(data);
+      setTotalSavings(clientData.totalSavings);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
   }
 
   if (error) {
-    return <ErrorMessage message={error} />;
+    return <ErrorMessage message={error} onRetry={loadData} />;
   }
 
   const pieData = savingsData.slice(0, 6).map(d => ({
@@ -2278,23 +2145,21 @@ const ClientSavingsTab = ({ clientId }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
         <StatCard 
           title="Total Savings" 
-          value={`${(totalSavings / 1000).toFixed(1)}k`}
+          value={`$${(totalSavings / 1000).toFixed(1)}k`}
           icon={<DollarSign size={24} />}
           subtitle="Lifetime accumulated"
-          change="+$2.3k this month"
-          changeType="positive"
         />
         <StatCard 
           title="Monthly Average" 
-          value={`${(totalSavings / 12 / 1000).toFixed(1)}k`}
+          value={`$${(totalSavings / Math.max(savingsData.length, 1) / 1000).toFixed(1)}k`}
           icon={<BarChart3 size={24} />}
           subtitle="Per month"
         />
         <StatCard 
-          title="Savings Rate" 
-          value="34.2%"
+          title="This Month" 
+          value={`$${((savingsData[savingsData.length - 1]?.savings || 0) / 1000).toFixed(1)}k`}
           icon={<TrendingUp size={24} />}
-          subtitle="vs On-Demand"
+          subtitle="Current period"
         />
       </div>
       
@@ -2303,38 +2168,23 @@ const ClientSavingsTab = ({ clientId }) => {
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-gray-900">Monthly Savings Trend</h3>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              icon={<Download size={16} />}
-              onClick={() => api.exportSavings(clientId)}
-            >
-              Export
+            <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={loadData}>
+              Refresh
             </Button>
           </div>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={savingsData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-              <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
               <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="savings" fill="#10b981" radius={[8, 8, 0, 0]} />
+              <Bar dataKey="savings" fill="#10b981" radius={[8, 8, 0, 0]} name="Savings" />
             </BarChart>
           </ResponsiveContainer>
         </div>
         
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900">Savings Distribution</h3>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              icon={<Download size={16} />}
-              onClick={() => api.exportSavings(clientId)}
-            >
-              Export
-            </Button>
-          </div>
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Savings Distribution (Last 6 Months)</h3>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
@@ -2360,22 +2210,12 @@ const ClientSavingsTab = ({ clientId }) => {
       
       {/* Cost Comparison */}
       <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-bold text-gray-900">Cost Comparison by Month</h3>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            icon={<Download size={16} />}
-            onClick={() => api.exportSavings(clientId)}
-          >
-            Export
-          </Button>
-        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-4">Cost Comparison by Month</h3>
         <ResponsiveContainer width="100%" height={350}>
           <AreaChart data={savingsData}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(1)}k`} tick={{ fontSize: 12 }} />
+            <YAxis tickFormatter={(value) => `$${(value / 1000).toFixed(1)}k`} tick={{ fontSize: 12 }} />
             <Tooltip content={<CustomTooltip />} />
             <Legend />
             <Area 
@@ -2388,11 +2228,11 @@ const ClientSavingsTab = ({ clientId }) => {
             />
             <Area 
               type="monotone" 
-              dataKey="modelCost" 
+              dataKey="actualCost" 
               stackId="1" 
               stroke="#3b82f6" 
               fill="#bfdbfe" 
-              name="Optimized Cost" 
+              name="Actual Cost" 
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -2401,47 +2241,66 @@ const ClientSavingsTab = ({ clientId }) => {
   );
 };
 
+// ==============================================================================
+// CLIENT HISTORY TAB
+// ==============================================================================
+
 const ClientHistoryTab = ({ clientId }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ status: 'all', trigger: 'all' });
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadHistory = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await api.getSwitchHistory(clientId);
-        setHistory(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadHistory();
-  }, [clientId]);
+  }, [clientId, filters]);
+
+  const loadHistory = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.getSwitchHistory(clientId, filters);
+      setHistory(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
   }
 
   if (error) {
-    return <ErrorMessage message={error} />;
+    return <ErrorMessage message={error} onRetry={loadHistory} />;
   }
 
   return (
     <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-        <h3 className="text-lg font-bold text-gray-900">Complete Switch History</h3>
+        <h3 className="text-lg font-bold text-gray-900">Switch History</h3>
         <div className="flex flex-wrap gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            icon={<Download size={16} />}
-            onClick={() => api.exportSwitchHistory(clientId)}
+          <select
+            value={filters.status}
+            onChange={(e) => setFilters({...filters, status: e.target.value})}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
           >
-            Export CSV
+            <option value="all">All Status</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <select
+            value={filters.trigger}
+            onChange={(e) => setFilters({...filters, trigger: e.target.value})}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">All Triggers</option>
+            <option value="manual">Manual</option>
+            <option value="model">Auto</option>
+          </select>
+          <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={loadHistory}>
+            Refresh
           </Button>
           <Badge variant="info">{history.length} Total</Badge>
         </div>
@@ -2451,7 +2310,7 @@ const ClientHistoryTab = ({ clientId }) => {
         <EmptyState
           icon={<History size={48} />}
           title="No Switch History"
-          description="No switches have been performed yet"
+          description="No switches match your filter criteria"
         />
       ) : (
         <div className="overflow-x-auto">
@@ -2459,12 +2318,13 @@ const ClientHistoryTab = ({ clientId }) => {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Time</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instance</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">From → To</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Pools</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Old Instance</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">New Instance</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Transition</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Trigger</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Price</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Status</th>
                 <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Impact</th>
+                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Duration</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -2474,7 +2334,10 @@ const ClientHistoryTab = ({ clientId }) => {
                     {new Date(sw.timestamp).toLocaleString()}
                   </td>
                   <td className="py-3 px-4 text-sm font-mono text-gray-500">
-                    {sw.instanceId}
+                    {sw.oldInstanceId || 'N/A'}
+                  </td>
+                  <td className="py-3 px-4 text-sm font-mono text-gray-500">
+                    {sw.newInstanceId}
                   </td>
                   <td className="py-3 px-4 text-sm">
                     <div className="flex items-center space-x-2">
@@ -2487,22 +2350,23 @@ const ClientHistoryTab = ({ clientId }) => {
                       </Badge>
                     </div>
                   </td>
-                  <td className="py-3 px-4 text-xs font-mono text-gray-500">
-                    <div>{sw.fromPool}</div>
-                    <div className="text-gray-400">→ {sw.toPool}</div>
-                  </td>
                   <td className="py-3 px-4">
                     <Badge variant={sw.trigger === 'manual' ? 'warning' : 'info'}>
                       {sw.trigger}
                     </Badge>
                   </td>
-                  <td className="py-3 px-4 text-sm font-semibold text-gray-900">
-                    ${sw.price.toFixed(4)}
+                  <td className="py-3 px-4">
+                    <Badge variant={sw.executionStatus === 'completed' ? 'success' : 'danger'}>
+                      {sw.executionStatus || 'completed'}
+                    </Badge>
                   </td>
                   <td className="py-3 px-4 text-sm font-bold">
                     <span className={sw.savingsImpact >= 0 ? 'text-green-600' : 'text-red-600'}>
-                      ${sw.savingsImpact.toFixed(4)}
+                      ${sw.savingsImpact?.toFixed(4) || '0.0000'}/hr
                     </span>
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-600">
+                    {sw.executionDuration ? `${sw.executionDuration}s` : 'N/A'}
                   </td>
                 </tr>
               ))}
@@ -2524,19 +2388,20 @@ const ClientDetailView = ({ clientId, onBack }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadClient = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getClientDetails(clientId);
-        setClient(data);
-      } catch (error) {
-        console.error('Failed to load client:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadClient();
   }, [clientId]);
+
+  const loadClient = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getClientDetails(clientId);
+      setClient(data);
+    } catch (error) {
+      console.error('Failed to load client:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={16} /> },
@@ -2608,44 +2473,43 @@ const ClientDetailView = ({ clientId, onBack }) => {
   );
 };
 // ==============================================================================
-// ADMIN PAGES
+// ADMIN OVERVIEW PAGE
 // ==============================================================================
 
 const AdminOverview = () => {
-  const [activity, setActivity] = useState([]);
   const [stats, setStats] = useState(null);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [activityData, statsData, clientsData] = await Promise.all([
-          api.getRecentActivity(),
-          api.getGlobalStats(),
-          api.getAllClients()
-        ]);
-        setActivity(activityData);
-        setStats(statsData);
-        setClients(clientsData);
-      } catch (error) {
-        console.error('Failed to load overview data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
-    
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
   }, []);
 
-  const icons = {
-    switch: <RefreshCw size={16} className="text-blue-500" />,
-    agent: <Server size={16} className="text-green-500" />,
-    event: <AlertCircle size={16} className="text-yellow-500" />,
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [statsData, clientsData] = await Promise.all([
+        api.getGlobalStats(),
+        api.getAllClients()
+      ]);
+      setStats(statsData);
+      setClients(clientsData);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  if (loading) {
+    return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
+  }
+
+  if (error) {
+    return <ErrorMessage message={error} onRetry={loadData} />;
+  }
 
   const topClients = clients
     .sort((a, b) => b.totalSavings - a.totalSavings)
@@ -2657,7 +2521,7 @@ const AdminOverview = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatCard 
           title="Total Clients" 
-          value={stats?.totalAccounts || 0} 
+          value={stats?.totalClients || 0} 
           icon={<Users size={28} />}
           subtitle="Active accounts"
         />
@@ -2675,48 +2539,16 @@ const AdminOverview = () => {
         />
         <StatCard 
           title="Total Savings" 
-          value={stats ? `${(stats.totalSavings / 1000).toFixed(1)}k` : '$0'} 
+          value={stats ? `$${(stats.totalSavings / 1000).toFixed(1)}k` : '$0'} 
           icon={<TrendingUp size={28} />}
-          subtitle="Year to date"
-          change="+12.5% from last month"
-          changeType="positive"
+          subtitle="All time"
         />
       </div>
       
-      {/* Activity and Quick Stats */}
+      {/* Quick Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-lg font-bold text-gray-900">System Activity</h3>
-            <Badge variant="info">Real-time</Badge>
-          </div>
-          {loading ? (
-            <div className="flex justify-center items-center h-80"><LoadingSpinner /></div>
-          ) : activity.length === 0 ? (
-            <EmptyState
-              icon={<AlertCircle size={48} />}
-              title="No Recent Activity"
-              description="No events have been recorded recently"
-            />
-          ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-              {activity.map(item => (
-                <div key={item.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <span className="flex-shrink-0 w-10 h-10 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-200">
-                    {icons[item.type] || <AlertCircle size={16} className="text-gray-500" />}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 break-words">{item.text}</p>
-                    <p className="text-xs text-gray-500 mt-1">{item.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
         <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">Quick Stats</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-6">System Health</h3>
           <div className="space-y-4">
             <div className="p-4 bg-gradient-to-r from-green-50 to-green-100 rounded-lg border border-green-200">
               <div className="flex justify-between items-center mb-2">
@@ -2724,103 +2556,96 @@ const AdminOverview = () => {
                 <CheckCircle size={18} className="text-green-600" />
               </div>
               <p className="text-2xl font-bold text-green-700">
-                {stats ? ((stats.modelSwitches / Math.max(stats.totalSwitches, 1)) * 100).toFixed(1) : 0}%
+                {stats ? ((stats.completedSwitches / Math.max(stats.totalSwitches, 1)) * 100).toFixed(1) : 0}%
               </p>
-              <p className="text-xs text-green-600 mt-1">Auto-switch accuracy</p>
+              <p className="text-xs text-green-600 mt-1">
+                {stats?.completedSwitches || 0} / {stats?.totalSwitches || 0} switches
+              </p>
             </div>
             
             <div className="p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-blue-900">Spot Usage</span>
-                <Zap size={18} className="text-blue-600" />
+                <span className="text-sm font-medium text-blue-900">Manual Override</span>
+                <Activity size={18} className="text-blue-600" />
               </div>
-              <p className="text-2xl font-bold text-blue-700">87.3%</p>
-              <p className="text-xs text-blue-600 mt-1">Average utilization</p>
+              <p className="text-2xl font-bold text-blue-700">{stats?.manualSwitches || 0}</p>
+              <p className="text-xs text-blue-600 mt-1">Manual interventions</p>
             </div>
             
             <div className="p-4 bg-gradient-to-r from-purple-50 to-purple-100 rounded-lg border border-purple-200">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-purple-900">Avg Savings</span>
-                <DollarSign size={18} className="text-purple-600" />
+                <span className="text-sm font-medium text-purple-900">Auto Switches</span>
+                <Zap size={18} className="text-purple-600" />
               </div>
-              <p className="text-2xl font-bold text-purple-700">
-                ${stats ? (stats.totalSavings / 12 / 1000).toFixed(1) : 0}k
-              </p>
-              <p className="text-xs text-purple-600 mt-1">Per month</p>
+              <p className="text-2xl font-bold text-purple-700">{stats?.modelSwitches || 0}</p>
+              <p className="text-xs text-purple-600 mt-1">Automated decisions</p>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Top Clients Table */}
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
-          <h3 className="text-lg font-bold text-gray-900">Top Clients by Savings</h3>
-          <Button variant="outline" size="sm" icon={<Download size={16} />} onClick={() => api.exportGlobalStats()}>
-            Export
-          </Button>
-        </div>
-        {topClients.length === 0 ? (
-          <EmptyState
-            icon={<Users size={48} />}
-            title="No Clients Found"
-            description="No clients are registered yet"
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Rank</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Client</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instances</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Agents</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Savings</th>
-                  <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topClients.map((client, idx) => (
-                  <tr key={client.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 px-4">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold ${
-                        idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-orange-600' : 'bg-gray-300'
-                      }`}>
-                        {idx + 1}
-                      </div>
-                    </td>
-                    <td className="py-4 px-4">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{client.name}</p>
-                        <p className="text-xs text-gray-500 font-mono break-all">{client.id}</p>
-                      </div>
-                    </td>
-                    <td className="py-4 px-4 text-sm text-gray-700">{client.instances}</td>
-                    <td className="py-4 px-4 text-sm text-gray-700">
-                      <span className="text-green-600 font-medium">{client.agentsOnline}</span>
-                      <span className="text-gray-400">/{client.agentsTotal}</span>
-                    </td>
-                    <td className="py-4 px-4 text-sm font-bold text-green-600">
-                      ${(client.totalSavings / 1000).toFixed(1)}k
-                    </td>
-                    <td className="py-4 px-4">
-                      <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
-                        {client.status}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-gray-900">Top Clients by Savings</h3>
+            <Button variant="outline" size="sm" icon={<RefreshCw size={14} />} onClick={loadData}>
+              Refresh
+            </Button>
           </div>
-        )}
+          {topClients.length === 0 ? (
+            <EmptyState
+              icon={<Users size={48} />}
+              title="No Clients Found"
+              description="No clients are registered yet"
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Rank</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Client</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instances</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Agents</th>
+                    <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Savings</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topClients.map((client, idx) => (
+                    <tr key={client.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-4 px-4">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold ${
+                          idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-orange-600' : 'bg-gray-300'
+                        }`}>
+                          {idx + 1}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{client.name}</p>
+                          <p className="text-xs text-gray-500 font-mono">{client.id}</p>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4 text-sm text-gray-700">{client.instancesActive || 0}</td>
+                      <td className="py-4 px-4 text-sm text-gray-700">
+                        <span className="text-green-600 font-medium">{client.agentsOnline || 0}</span>
+                        <span className="text-gray-400">/{client.agentsTotal || 0}</span>
+                      </td>
+                      <td className="py-4 px-4 text-sm font-bold text-green-600">
+                        ${(client.totalSavings / 1000).toFixed(1)}k
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
 // ==============================================================================
-// UPDATED: ALL CLIENTS PAGE WITH ADD CLIENT FEATURE
+// ALL CLIENTS PAGE
 // ==============================================================================
 
 const AllClientsPage = ({ onSelectClient }) => {
@@ -2893,6 +2718,14 @@ const AllClientsPage = ({ onSelectClient }) => {
               >
                 Add Client
               </Button>
+              <Button
+                variant="outline"
+                size="md"
+                icon={<RefreshCw size={18} />}
+                onClick={loadClients}
+              >
+                Refresh
+              </Button>
             </div>
           </div>
 
@@ -2909,9 +2742,8 @@ const AllClientsPage = ({ onSelectClient }) => {
               {filteredClients.map(client => (
                 <div 
                   key={client.id}
-                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-all cursor-pointer bg-gradient-to-br from-white to-gray-50 relative group"
+                  className="border border-gray-200 rounded-lg p-5 hover:shadow-lg transition-all bg-gradient-to-br from-white to-gray-50 relative group"
                 >
-                  {/* Card Header with Actions */}
                   <div className="flex items-start justify-between mb-4">
                     <div 
                       className="flex-1 min-w-0 cursor-pointer"
@@ -2920,32 +2752,28 @@ const AllClientsPage = ({ onSelectClient }) => {
                       <h4 className="text-lg font-bold text-gray-900 truncate">{client.name}</h4>
                       <p className="text-xs text-gray-500 font-mono mt-1 break-all">{client.id}</p>
                     </div>
-                    <div className="flex items-center space-x-1">
-                      <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
-                        {client.status}
-                      </Badge>
-                    </div>
+                    <Badge variant={client.status === 'active' ? 'success' : 'danger'}>
+                      {client.status}
+                    </Badge>
                   </div>
 
-                  {/* Client Stats */}
                   <div 
                     className="grid grid-cols-2 gap-4 mb-4 cursor-pointer"
                     onClick={() => onSelectClient(client.id)}
                   >
                     <div>
                       <p className="text-xs text-gray-500">Instances</p>
-                      <p className="text-xl font-bold text-gray-900">{client.instances}</p>
+                      <p className="text-xl font-bold text-gray-900">{client.instancesActive || 0}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500">Agents</p>
                       <p className="text-xl font-bold text-gray-900">
-                        <span className="text-green-600">{client.agentsOnline}</span>
-                        <span className="text-gray-400">/{client.agentsTotal}</span>
+                        <span className="text-green-600">{client.agentsOnline || 0}</span>
+                        <span className="text-gray-400">/{client.agentsTotal || 0}</span>
                       </p>
                     </div>
                   </div>
 
-                  {/* Savings */}
                   <div 
                     className="pt-4 border-t border-gray-200 cursor-pointer"
                     onClick={() => onSelectClient(client.id)}
@@ -2954,7 +2782,6 @@ const AllClientsPage = ({ onSelectClient }) => {
                     <p className="text-2xl font-bold text-green-600">${(client.totalSavings / 1000).toFixed(1)}k</p>
                   </div>
 
-                  {/* Action Buttons - Always visible */}
                   <div className="mt-4 pt-4 border-t border-gray-200 flex space-x-2">
                     <Button
                       variant="outline"
@@ -2990,7 +2817,6 @@ const AllClientsPage = ({ onSelectClient }) => {
         </div>
       </div>
 
-      {/* Modals */}
       {showAddModal && (
         <AddClientModal
           onClose={() => setShowAddModal(false)}
@@ -3022,33 +2848,63 @@ const AllClientsPage = ({ onSelectClient }) => {
     </>
   );
 };
+
+// ==============================================================================
+// ALL AGENTS PAGE
+// ==============================================================================
+
 const AllAgentsPage = () => {
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const loadAgents = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getAllAgentsGlobal();
-        setAgents(data);
-      } catch (error) {
-        console.error('Failed to load agents:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadAgents();
   }, []);
 
+  const loadAgents = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const clients = await api.getAllClients();
+      const allAgentsData = [];
+      
+      for (const client of clients) {
+        try {
+          const clientAgents = await api.getAgents(client.id, true);
+          clientAgents.forEach(agent => {
+            allAgentsData.push({
+              ...agent,
+              clientName: client.name,
+              clientId: client.id
+            });
+          });
+        } catch (err) {
+          console.error(`Failed to load agents for ${client.name}:`, err);
+        }
+      }
+      
+      setAgents(allAgentsData);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredAgents = agents.filter(a => {
     const matchesSearch = a.id.toLowerCase().includes(search.toLowerCase()) ||
-                         (a.hostname && a.hostname.toLowerCase().includes(search.toLowerCase()));
+                         (a.hostname && a.hostname.toLowerCase().includes(search.toLowerCase())) ||
+                         a.clientName.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || a.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  if (error) {
+    return <ErrorMessage message={error} onRetry={loadAgents} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -3075,11 +2931,20 @@ const AllAgentsPage = () => {
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
               />
             </div>
+            <Button variant="outline" size="sm" icon={<RefreshCw size={16} />} onClick={loadAgents}>
+              Refresh
+            </Button>
           </div>
         </div>
 
         {loading ? (
           <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>
+        ) : filteredAgents.length === 0 ? (
+          <EmptyState
+            icon={<Server size={48} />}
+            title="No Agents Found"
+            description={search || statusFilter !== 'all' ? 'No agents match your filters' : 'No agents are registered'}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full">
@@ -3096,7 +2961,7 @@ const AllAgentsPage = () => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filteredAgents.map(agent => (
-                  <tr key={agent.id} className="hover:bg-gray-50">
+                  <tr key={`${agent.clientId}-${agent.id}`} className="hover:bg-gray-50">
                     <td className="py-3 px-4 text-sm font-mono text-gray-700">{agent.id}</td>
                     <td className="py-3 px-4 text-sm text-gray-700">{agent.clientName}</td>
                     <td className="py-3 px-4">
@@ -3105,7 +2970,7 @@ const AllAgentsPage = () => {
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-sm text-gray-600">{agent.hostname || 'N/A'}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{agent.instanceCount || 0}</td>
+                    <td className="py-3 px-4 text-sm text-gray-700">{agent.activeInstances || 0}</td>
                     <td className="py-3 px-4 text-sm text-gray-600">
                       {agent.lastHeartbeat ? new Date(agent.lastHeartbeat).toLocaleString() : 'Never'}
                     </td>
@@ -3120,336 +2985,6 @@ const AllAgentsPage = () => {
     </div>
   );
 };
-
-const AllInstancesPage = () => {
-  const [instances, setInstances] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ status: 'all', mode: 'all', search: '' });
-
-  useEffect(() => {
-    const loadInstances = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getAllInstancesGlobal(filters);
-        setInstances(data);
-      } catch (error) {
-        console.error('Failed to load instances:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadInstances();
-  }, [filters]);
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-4">
-          <select
-            value={filters.status}
-            onChange={(e) => setFilters({...filters, status: e.target.value})}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="terminated">Terminated</option>
-          </select>
-          
-          <select
-            value={filters.mode}
-            onChange={(e) => setFilters({...filters, mode: e.target.value})}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-          >
-            <option value="all">All Modes</option>
-            <option value="spot">Spot</option>
-            <option value="ondemand">On-Demand</option>
-          </select>
-          
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search instances..."
-              value={filters.search}
-              onChange={(e) => setFilters({...filters, search: e.target.value})}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Instance ID</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Client</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Type</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Region</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Mode</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Price</th>
-                <th className="text-left py-3 px-4 text-xs font-semibold text-gray-600 uppercase">Savings</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-8">
-                    <LoadingSpinner />
-                  </td>
-                </tr>
-              ) : instances.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-8">
-                    <EmptyState
-                      icon={<Zap size={48} />}
-                      title="No Instances Found"
-                      description="No instances match your filter criteria"
-                    />
-                  </td>
-                </tr>
-              ) : (
-                instances.map(inst => (
-                  <tr key={inst.id} className="hover:bg-gray-50">
-                    <td className="py-3 px-4 text-sm font-mono text-gray-700">{inst.id}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{inst.clientName}</td>
-                    <td className="py-3 px-4 text-sm text-gray-700">{inst.type}</td>
-                    <td className="py-3 px-4 text-sm text-gray-600">{inst.region}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant={inst.mode === 'ondemand' ? 'danger' : 'success'}>
-                        {inst.mode}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-4 text-sm font-semibold text-gray-900">
-                      ${inst.spotPrice.toFixed(4)}
-                    </td>
-                    <td className="py-3 px-4 text-sm font-bold text-green-600">
-                      {(((inst.onDemandPrice - inst.spotPrice) / inst.onDemandPrice) * 100).toFixed(1)}%
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const GlobalSavingsPage = () => {
-  const [savingsData, setSavingsData] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const clients = await api.getAllClients();
-        const aggregated = [];
-        
-        for (let i = 0; i < 12; i++) {
-          const monthTotal = clients.reduce((sum, c) => sum + (c.totalSavings / 12), 0);
-          aggregated.push({
-            name: new Date(2025, i, 1).toLocaleDateString('en', { month: 'short' }),
-            savings: monthTotal * (0.8 + Math.random() * 0.4),
-            onDemandCost: monthTotal * 2.5,
-            modelCost: monthTotal * 1.5
-          });
-        }
-        
-        setSavingsData(aggregated);
-      } catch (error) {
-        console.error('Failed to load savings:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, []);
-
-  if (loading) {
-    return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
-  }
-
-  const totalSavings = savingsData.reduce((sum, d) => sum + d.savings, 0);
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        <StatCard 
-          title="YTD Savings" 
-          value={`${(totalSavings / 1000).toFixed(1)}k`}
-          icon={<DollarSign size={24} />}
-          subtitle="Year to date"
-        />
-        <StatCard 
-          title="Monthly Avg" 
-          value={`${(totalSavings / 12 / 1000).toFixed(1)}k`}
-          icon={<BarChart3 size={24} />}
-          subtitle="Average per month"
-        />
-        <StatCard 
-          title="Projected Annual" 
-          value={`${(totalSavings / 1000).toFixed(0)}k`}
-          icon={<TrendingUp size={24} />}
-          subtitle="Based on current rate"
-        />
-      </div>
-
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Global Savings Trend</h3>
-        <ResponsiveContainer width="100%" height={400}>
-          <AreaChart data={savingsData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend />
-            <Area type="monotone" dataKey="onDemandCost" stackId="1" stroke="#ef4444" fill="#fecaca" name="On-Demand Cost" />
-            <Area type="monotone" dataKey="modelCost" stackId="1" stroke="#3b82f6" fill="#bfdbfe" name="Optimized Cost" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-};
-
-const ActivityLogPage = () => {
-  const [activity, setActivity] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadActivity = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getRecentActivity();
-        setActivity(data);
-      } catch (error) {
-        console.error('Failed to load activity:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadActivity();
-  }, []);
-
-  const icons = {
-    switch: <RefreshCw size={20} className="text-blue-500" />,
-    agent: <Server size={20} className="text-green-500" />,
-    event: <AlertCircle size={20} className="text-yellow-500" />,
-  };
-
-  return (
-    <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-      <h3 className="text-lg font-bold text-gray-900 mb-6">System Activity Log</h3>
-      {loading ? (
-        <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>
-      ) : activity.length === 0 ? (
-        <EmptyState
-          icon={<History size={48} />}
-          title="No Activity"
-          description="No recent system activity"
-        />
-      ) : (
-        <div className="space-y-3">
-          {activity.map(item => (
-            <div key={item.id} className="flex items-start space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-              <span className="flex-shrink-0 w-12 h-12 flex items-center justify-center bg-white rounded-lg shadow-sm border border-gray-200">
-                {icons[item.type] || <AlertCircle size={20} className="text-gray-500" />}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 break-words">{item.text}</p>
-                <p className="text-xs text-gray-500 mt-1">{item.time}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const SystemHealthPage = () => {
-  const [health, setHealth] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadHealth = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getSystemHealth();
-        setHealth(data);
-      } catch (error) {
-        console.error('Failed to load health:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadHealth();
-  }, []);
-
-  if (loading) {
-    return <div className="flex justify-center items-center h-64"><LoadingSpinner /></div>;
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard 
-          title="API Status" 
-          value={health?.apiStatus || 'Unknown'}
-          icon={<Activity size={24} />}
-          subtitle="Response time: 45ms"
-        />
-        <StatCard 
-          title="Database" 
-          value={health?.database || 'Connected'}
-          icon={<Database size={24} />}
-          subtitle="Pool: 8/10 active"
-        />
-        <StatCard 
-          title="Decision Engine" 
-          value={health?.decisionEngine || 'Loaded'}
-          icon={<Cpu size={24} />}
-          subtitle="ML models ready"
-        />
-        <StatCard 
-          title="Uptime" 
-          value="99.9%"
-          icon={<Clock size={24} />}
-          subtitle="Last 30 days"
-        />
-      </div>
-
-      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
-        <h3 className="text-lg font-bold text-gray-900 mb-6">System Components</h3>
-        <div className="space-y-4">
-          {[
-            { name: 'Web Server', status: 'Healthy', uptime: '99.9%' },
-            { name: 'Database Server', status: 'Healthy', uptime: '100%' },
-            { name: 'Decision Engine', status: 'Healthy', uptime: '99.8%' },
-            { name: 'Agent Communication', status: 'Healthy', uptime: '99.7%' },
-            { name: 'Background Jobs', status: 'Healthy', uptime: '100%' },
-          ].map((component, idx) => (
-            <div key={idx} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-4">
-                <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{component.name}</p>
-                  <p className="text-xs text-gray-500">Uptime: {component.uptime}</p>
-                </div>
-              </div>
-              <Badge variant="success">{component.status}</Badge>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // ==============================================================================
 // MAIN APP COMPONENT
 // ==============================================================================
@@ -3461,24 +2996,36 @@ const App = () => {
   const [stats, setStats] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = useCallback(async () => {
+    setRefreshing(true);
     try {
-      const [clientsData, statsData] = await Promise.all([
+      const [clientsData, statsData, healthData] = await Promise.all([
         api.getAllClients(),
-        api.getGlobalStats()
+        api.getGlobalStats(),
+        api.healthCheck()
       ]);
       setClients(clientsData);
-      setStats(statsData);
+      setStats({
+        ...statsData,
+        backendHealth: healthData.status
+      });
       setLastRefresh(new Date().toISOString());
     } catch (error) {
       console.error('Failed to load data:', error);
+      setStats(prev => ({
+        ...prev,
+        backendHealth: 'unhealthy'
+      }));
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 60000);
+    const interval = setInterval(loadData, 60000); // Refresh every 60 seconds
     return () => clearInterval(interval);
   }, [loadData]);
 
@@ -3496,6 +3043,10 @@ const App = () => {
   const handlePageChange = (page) => {
     setActivePage(page);
     setSelectedClientId(null);
+  };
+
+  const handleRefresh = () => {
+    loadData();
   };
 
   return (
@@ -3516,9 +3067,10 @@ const App = () => {
         {/* Header */}
         <AdminHeader
           stats={stats}
-          onRefresh={loadData}
+          onRefresh={handleRefresh}
           lastRefresh={lastRefresh}
           onMenuToggle={() => setSidebarOpen(true)}
+          refreshing={refreshing}
         />
         
         {/* Page Content */}
@@ -3526,10 +3078,6 @@ const App = () => {
           {activePage === 'overview' && <AdminOverview />}
           {activePage === 'clients' && <AllClientsPage onSelectClient={handleSelectClient} />}
           {activePage === 'agents' && <AllAgentsPage />}
-          {activePage === 'instances' && <AllInstancesPage />}
-          {activePage === 'savings' && <GlobalSavingsPage />}
-          {activePage === 'activity' && <ActivityLogPage />}
-          {activePage === 'health' && <SystemHealthPage />}
           {activePage === 'client-detail' && selectedClientId && (
             <ClientDetailView
               clientId={selectedClientId}
