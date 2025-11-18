@@ -162,12 +162,32 @@ def health_check():
         # Test database connection
         result = execute_query("SELECT 1", fetch_one=True)
         db_status = "healthy" if result else "unhealthy"
+
+        # Get decision engine status
+        engine_status = execute_query("""
+            SELECT engine_type, model_version, is_active, loaded_at
+            FROM decision_engine_status
+            WHERE region = %s
+            ORDER BY loaded_at DESC
+            LIMIT 1
+        """, (config.REGION,), fetch_one=True)
+
+        decision_engine_loaded = False
+        if engine_status and engine_status['is_active']:
+            decision_engine_loaded = True
+
     except:
         db_status = "unhealthy"
-    
+        decision_engine_loaded = False
+
     return jsonify({
         "status": "healthy" if db_status == "healthy" else "degraded",
         "database": db_status,
+        "decision_engine": {
+            "loaded": decision_engine_loaded,
+            "type": engine_status['engine_type'] if engine_status else None,
+            "version": engine_status['model_version'] if engine_status else None
+        },
         "timestamp": datetime.now().isoformat(),
         "version": "3.0.0"
     })
@@ -954,6 +974,54 @@ def agent_heartbeat():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 # ============================================================================
+# DECISION ENGINE INITIALIZATION
+# ============================================================================
+
+def initialize_decision_engine():
+    """Initialize and register decision engine status"""
+    try:
+        # Check if models directory exists and contains model files
+        model_files_exist = False
+        model_version = "not_loaded"
+
+        if config.MODEL_DIR.exists():
+            # Look for common model files
+            model_files = list(config.MODEL_DIR.glob("*.pkl")) + list(config.MODEL_DIR.glob("*.json"))
+            if model_files:
+                model_files_exist = True
+                # Try to read version from manifest if it exists
+                manifest_path = config.MODEL_DIR / "manifest.json"
+                if manifest_path.exists():
+                    try:
+                        with open(manifest_path, 'r') as f:
+                            manifest = json.load(f)
+                            model_version = manifest.get('version', 'v1.0.0')
+                    except:
+                        model_version = "v1.0.0"
+                else:
+                    model_version = "v1.0.0"
+
+        # Register or update decision engine status
+        execute_query("""
+            INSERT INTO decision_engine_status
+            (engine_type, region, model_version, model_path, is_active, loaded_at, decisions_count)
+            VALUES (%s, %s, %s, %s, %s, NOW(), 0)
+            ON DUPLICATE KEY UPDATE
+                is_active = VALUES(is_active),
+                loaded_at = NOW(),
+                model_version = VALUES(model_version)
+        """, (config.DECISION_ENGINE_TYPE, config.REGION, model_version,
+              str(config.MODEL_DIR), model_files_exist))
+
+        if model_files_exist:
+            logger.info(f"✓ Decision engine registered: {config.DECISION_ENGINE_TYPE} ({model_version})")
+        else:
+            logger.warning(f"⚠ Decision engine registered but no model files found in {config.MODEL_DIR}")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize decision engine status: {e}")
+
+# ============================================================================
 # INITIALIZATION
 # ============================================================================
 
@@ -961,6 +1029,11 @@ def initialize_app():
     """Initialize the application"""
     try:
         init_db_pool()
+        logger.info("✓ Database pool initialized successfully")
+
+        # Initialize decision engine status
+        initialize_decision_engine()
+
         logger.info("✓ Application initialized successfully")
     except Exception as e:
         logger.critical(f"Failed to initialize application: {e}")
