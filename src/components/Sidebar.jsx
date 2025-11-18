@@ -34,7 +34,7 @@ const Sidebar = ({
 
   return (
     <div
-      className={`bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white flex flex-col h-screen shadow-2xl transition-all duration-300 ${
+      className={`bg-gradient-to-b from-gray-900 to-gray-800 text-white flex flex-col h-screen shadow-2xl transition-all duration-300 ${
         isCollapsed ? 'w-20' : 'w-64'
       }`}
     >
@@ -65,8 +65,8 @@ const Sidebar = ({
               onClick={() => onViewChange(item.id)}
               className={`w-full flex items-center px-3 py-2.5 rounded-lg mb-1 transition-all duration-200 ${
                 currentView === item.id
-                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg scale-105'
-                  : 'text-gray-300 hover:bg-gray-800 hover:scale-102'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg transform scale-105'
+                  : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
               }`}
               title={isCollapsed ? item.label : ''}
             >
@@ -131,8 +131,8 @@ const Sidebar = ({
                         onClick={() => onClientSelect(client)}
                         className={`w-full text-left px-3 py-2.5 rounded-lg transition-all duration-200 ${
                           selectedClient?.id === client.id
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg scale-102'
-                            : 'text-gray-300 hover:bg-gray-800 hover:scale-101'
+                            ? 'bg-gradient-to-r from-blue-600 to-blue-500 shadow-lg transform scale-102'
+                            : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
