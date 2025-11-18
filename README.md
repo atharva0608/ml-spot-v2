@@ -1,193 +1,411 @@
-# ML Spot Optimizer - Frontend
+# ML Spot Optimizer - Frontend Only
 
-> Advanced AI-powered EC2 spot instance cost optimization dashboard
+> 🎨 **Frontend-Only Branch** - Complete React dashboard for ML Spot Optimizer
+>
+> This branch contains ONLY the frontend application files. For the complete application including backend, see the main branch.
 
-## Features
+---
 
-### 🏠 Global Admin Dashboard
-- **Real-time Statistics**: Monitor total agents, instances, clients, and savings
-- **Interactive Charts**: Daily savings trends, switch activity, and cumulative savings
-- **System Health**: Database, backend API, and decision engine status monitoring
-- **Switch Analytics**: Manual vs AI-powered switch distribution
+## 📦 What's Included
 
-### 👥 Client Management
-- **Multi-client Support**: Manage multiple client accounts from a single dashboard
-- **Easy Onboarding**: Quick client creation with auto-generated API tokens
-- **Client Metrics**: Per-client agents, instances, switches, and savings tracking
-- **Token Management**: Secure API token viewing and regeneration
+This branch contains a fully modular, production-ready React frontend with:
 
-### 🤖 Agent Management
-- **Real-time Status**: Live agent heartbeat monitoring
-- **Configuration**: Per-agent settings for savings thresholds and risk tolerance
-- **Toggle Controls**: Enable/disable agents, auto-switching, and auto-termination
-- **Statistics**: Instance count, recent switches, and last seen timestamps
+- ✅ **15 Component Files** - Organized, reusable components
+- ✅ **Complete API Client** - Ready to connect to any backend
+- ✅ **Modern UI/UX** - Tailwind CSS with custom styling
+- ✅ **Interactive Charts** - Recharts for data visualization
+- ✅ **Responsive Design** - Mobile, tablet, and desktop support
 
-### 💻 Instance Management
-- **Live Pricing**: Current spot and on-demand pricing for all instances
-- **Smart Switching**: Switch between spot pools and on-demand with recommendations
-- **Savings Tracking**: Real-time savings percentage vs on-demand
-- **Pool Analysis**: View all available spot pools with pricing comparison
+---
 
-### 📊 Advanced Analytics
-- **Switch History**: Complete audit trail with filters by trigger type and status
-- **Savings Charts**: Daily, monthly, and cumulative savings visualizations
-- **Live Data Stream**: Real-time agent heartbeats and status updates
-- **Export Capability**: Download savings and switch history data
+## 🚀 Quick Start
 
-### 🏥 System Health Monitoring
-- **Service Status**: Database, backend API, and decision engine health
-- **Performance Metrics**: Active connections, uptime, and version tracking
-- **Real-time Updates**: Auto-refresh every 30 seconds
+### Prerequisites
+- Node.js 16+
+- npm or yarn
 
-### 🧠 AI/ML Models
-- **Model Configuration**: View and manage decision engine settings
-- **Performance Stats**: Prediction accuracy and success rates
-- **Multi-model Support**: Support for various ML algorithms (coming soon)
+### Installation
 
-## Technology Stack
-
-- **React 18**: Modern React with hooks and functional components
-- **Recharts**: Beautiful, responsive charts and graphs
-- **Tailwind CSS**: Utility-first CSS framework for rapid UI development
-- **Lucide React**: Clean, consistent icon library
-- **Vite**: Lightning-fast build tool and dev server
-
-## Project Structure
-
-```
-src/
-├── components/          # React components
-│   ├── AgentsTab.jsx           # Agent management interface
-│   ├── ClientDashboard.jsx     # Client details and tabs
-│   ├── HomeDashboard.jsx       # Global admin dashboard
-│   ├── InstancesTab.jsx        # Instance management
-│   ├── LiveDataTab.jsx         # Real-time data stream
-│   ├── ModelsView.jsx          # AI/ML models configuration
-│   ├── SavingsTab.jsx          # Savings analytics
-│   ├── SharedComponents.jsx   # Reusable UI components
-│   ├── Sidebar.jsx             # Navigation sidebar
-│   ├── SwitchHistoryTab.jsx   # Switch history with filters
-│   └── SystemHealthView.jsx   # System health monitoring
-├── services/           # API services
-│   └── api.js                  # Complete API client
-├── styles/             # CSS styles
-│   └── index.css               # Tailwind and custom styles
-├── App.jsx             # Main app component
-└── index.js            # React entry point
-```
-
-## Installation
-
-1. **Install Dependencies**
-   ```bash
-   npm install
-   ```
-
-2. **Configure API Endpoint**
-   Edit `src/services/api.js` to set your backend URL:
-   ```javascript
-   const API_CONFIG = {
-     BASE_URL: 'http://localhost:5000'  // Change to your backend URL
-   };
-   ```
-
-3. **Start Development Server**
-   ```bash
-   npm run dev
-   ```
-
-4. **Build for Production**
-   ```bash
-   npm run build
-   ```
-
-## Development
-
-### Running Locally
 ```bash
-npm run dev
-```
-The app will be available at `http://localhost:3000`
+# 1. Clone this branch
+git clone -b frontend-only https://github.com/atharva0608/ml-spot-v2.git
+cd ml-spot-v2
 
-### Building
+# 2. Install dependencies
+npm install
+
+# 3. Configure API endpoint (if needed)
+# Edit src/services/api.js and update BASE_URL
+
+# 4. Start development server
+npm run dev
+
+# 5. Open browser at http://localhost:3000
+```
+
+---
+
+## 🏗️ Project Structure
+
+```
+ml-spot-v2/
+├── src/
+│   ├── components/              # React components
+│   │   ├── AgentsTab.jsx           # Agent management
+│   │   ├── ClientDashboard.jsx     # Client hub with tabs
+│   │   ├── HomeDashboard.jsx       # Global admin dashboard
+│   │   ├── InstancesTab.jsx        # Instance management
+│   │   ├── LiveDataTab.jsx         # Real-time data stream
+│   │   ├── ModelsView.jsx          # AI/ML models view
+│   │   ├── SavingsTab.jsx          # Savings analytics
+│   │   ├── SharedComponents.jsx    # Reusable UI components
+│   │   ├── Sidebar.jsx             # Navigation sidebar
+│   │   ├── SwitchHistoryTab.jsx    # Switch history
+│   │   └── SystemHealthView.jsx    # System health monitor
+│   ├── services/
+│   │   └── api.js                  # API client (50+ methods)
+│   ├── styles/
+│   │   └── index.css               # Tailwind + custom styles
+│   ├── App.jsx                     # Main app component
+│   └── index.js                    # React entry point
+├── index.html                      # HTML entry point
+├── package.json                    # Dependencies
+├── vite.config.js                  # Vite configuration
+├── tailwind.config.js              # Tailwind configuration
+├── postcss.config.js               # PostCSS configuration
+└── .gitignore                      # Git ignore rules
+```
+
+---
+
+## 🎯 Features
+
+### Global Admin Dashboard
+- Real-time statistics for all clients
+- Interactive charts (savings, switches, trends)
+- System health monitoring
+- Auto-refresh functionality
+
+### Client Management
+- Multi-client support
+- Easy client creation with auto-generated tokens
+- Per-client metrics and analytics
+- Client deletion with confirmation
+
+### Agent Management
+- Real-time status monitoring (online/offline/warning)
+- Individual agent configuration
+- Toggle controls (enable, auto-switch, auto-terminate)
+- Heartbeat tracking
+
+### Instance Management
+- Live pricing display (spot & on-demand)
+- Smart switching between spot pools
+- Savings percentage tracking
+- Pool recommendations
+
+### Switch History
+- Complete audit trail
+- Advanced filtering (trigger type, status)
+- Summary statistics
+- Export functionality
+
+### Savings Analytics
+- Daily, weekly, monthly charts
+- Trend analysis
+- Multiple chart types (area, bar, line)
+- Export reports
+
+### Live Data Monitoring
+- Real-time agent heartbeats
+- JSON payload viewing
+- Event type filtering
+- Summary statistics
+
+### System Health
+- Database status
+- Backend API health
+- Decision engine monitoring
+- Service metrics
+
+### AI/ML Models
+- Model configuration display
+- Engine type and region info
+- Performance statistics
+- Feature roadmap
+
+---
+
+## 🛠️ Technology Stack
+
+| Category | Technology |
+|----------|-----------|
+| **Framework** | React 18 |
+| **Build Tool** | Vite 4 |
+| **Styling** | Tailwind CSS 3 |
+| **Charts** | Recharts 2 |
+| **Icons** | Lucide React |
+| **Language** | JavaScript (JSX) |
+
+---
+
+## 📝 Available Scripts
+
+```bash
+# Development server (port 3000)
+npm run dev
+
+# Production build
+npm run build
+
+# Preview production build
+npm run preview
+
+# Lint code (if configured)
+npm run lint
+```
+
+---
+
+## ⚙️ Configuration
+
+### API Endpoint
+
+Edit `src/services/api.js` to configure your backend URL:
+
+```javascript
+const API_CONFIG = {
+  BASE_URL: 'http://localhost:5000'  // Change this to your backend URL
+};
+```
+
+### Vite Proxy (Development)
+
+The `vite.config.js` includes a proxy configuration for development:
+
+```javascript
+server: {
+  port: 3000,
+  proxy: {
+    '/api': {
+      target: 'http://localhost:5000',
+      changeOrigin: true,
+    },
+  },
+}
+```
+
+Update the `target` to match your backend server.
+
+---
+
+## 📦 Dependencies
+
+### Production
+- `react` ^18.2.0 - UI framework
+- `react-dom` ^18.2.0 - React DOM rendering
+- `recharts` ^2.8.0 - Charting library
+- `lucide-react` ^0.263.1 - Icon library
+
+### Development
+- `@vitejs/plugin-react` ^4.0.4 - Vite React plugin
+- `autoprefixer` ^10.4.15 - CSS autoprefixer
+- `postcss` ^8.4.29 - CSS transformer
+- `tailwindcss` ^3.3.3 - Utility CSS framework
+- `vite` ^4.4.9 - Build tool
+
+---
+
+## 🎨 Customization
+
+### Colors
+
+Edit `tailwind.config.js` to customize the color scheme:
+
+```javascript
+theme: {
+  extend: {
+    colors: {
+      primary: {
+        // Your custom colors
+      },
+    },
+  },
+}
+```
+
+### Styling
+
+Global styles and custom CSS are in `src/styles/index.css`.
+
+---
+
+## 🚀 Deployment
+
+### Build for Production
+
 ```bash
 npm run build
 ```
-Production build will be in the `dist/` directory
 
-### Preview Production Build
-```bash
-npm run preview
-```
+This creates an optimized build in the `dist/` directory.
 
-## API Integration
+### Deploy to Hosting
 
-The frontend connects to the ML Spot Optimizer backend API. Make sure the backend is running and accessible.
+The build output can be deployed to any static hosting service:
 
-### Key API Endpoints Used:
+- **Vercel**: `vercel deploy`
+- **Netlify**: Drag and drop `dist/` folder
+- **AWS S3**: Upload `dist/` contents
+- **GitHub Pages**: Push `dist/` to gh-pages branch
+- **Nginx**: Serve `dist/` directory
+
+### Environment Variables
+
+For production, update the API endpoint:
+
+1. Create `.env.production`:
+   ```
+   VITE_API_URL=https://your-api.com
+   ```
+
+2. Update `src/services/api.js`:
+   ```javascript
+   const API_CONFIG = {
+     BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:5000'
+   };
+   ```
+
+---
+
+## 📱 Browser Support
+
+- ✅ Chrome (latest)
+- ✅ Firefox (latest)
+- ✅ Safari (latest)
+- ✅ Edge (latest)
+- ✅ Mobile browsers (iOS Safari, Chrome Mobile)
+
+---
+
+## 🔗 Backend Integration
+
+This frontend is designed to work with the ML Spot Optimizer backend API.
+
+### Required API Endpoints
+
+The frontend expects the following API endpoints:
+
+**Admin Endpoints:**
 - `GET /api/admin/stats` - Global statistics
-- `GET /api/admin/clients` - List all clients
-- `POST /api/admin/clients/create` - Create new client
+- `GET /api/admin/clients` - All clients
+- `POST /api/admin/clients/create` - Create client
+- `DELETE /api/admin/clients/:id` - Delete client
+- `GET /api/admin/clients/:id/token` - Get client token
+- `GET /api/admin/system-health` - System health
+
+**Client Endpoints:**
 - `GET /api/client/:id` - Client details
 - `GET /api/client/:id/agents` - Client agents
 - `GET /api/client/:id/instances` - Client instances
 - `GET /api/client/:id/switch-history` - Switch history
 - `GET /api/client/:id/savings` - Savings data
-- `POST /api/agent/:id/toggle` - Toggle agent status
-- `POST /api/instance/:id/switch` - Switch instance mode
-- `GET /api/admin/system-health` - System health status
+- `GET /api/client/:id/live-data` - Live data stream
 
-## Features in Detail
+**Agent Endpoints:**
+- `POST /api/agent/:id/toggle` - Toggle agent
+- `POST /api/agent/:id/auto-switch` - Toggle auto-switch
+- `POST /api/agent/:id/auto-terminate` - Toggle auto-terminate
+- `GET /api/agent/:id/config` - Get agent config
+- `POST /api/agent/:id/config` - Update agent config
+- `DELETE /api/agent/:id` - Delete agent
 
-### 🎨 Modern UI/UX
-- Clean, professional design with gradient accents
-- Responsive layout for desktop and mobile
-- Smooth animations and transitions
-- Interactive charts with tooltips
-- Loading states and error handling
+**Instance Endpoints:**
+- `GET /api/instance/:id/pools` - Get available pools
+- `POST /api/instance/:id/switch` - Switch instance
 
-### 📱 Responsive Design
-- Mobile-first approach
-- Tablet and desktop optimized
-- Adaptive navigation
-- Touch-friendly controls
+**Model Endpoints:**
+- `GET /api/models/status` - Models status
 
-### ♿ Accessibility
-- Semantic HTML
-- ARIA labels
-- Keyboard navigation
-- Focus indicators
-- Screen reader friendly
-
-### 🔒 Security
-- Secure token handling
-- API key protection warnings
-- Client-side validation
-- XSS protection
-
-## Browser Support
-
-- Chrome (latest)
-- Firefox (latest)
-- Safari (latest)
-- Edge (latest)
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is part of the ML Spot Optimizer platform.
-
-## Support
-
-For issues, questions, or contributions, please open an issue on GitHub.
+See the complete API client in `src/services/api.js` for all endpoints.
 
 ---
 
-Built with ❤️ using React, Tailwind CSS, and modern web technologies
+## 🐛 Troubleshooting
+
+### Port Already in Use
+
+If port 3000 is in use:
+
+```bash
+# Edit vite.config.js and change the port
+server: {
+  port: 3001,  // Change to any available port
+}
+```
+
+### API Connection Issues
+
+1. Check `src/services/api.js` has correct backend URL
+2. Verify backend is running
+3. Check browser console for CORS errors
+4. Ensure backend allows requests from frontend origin
+
+### Build Errors
+
+```bash
+# Clear cache and reinstall
+rm -rf node_modules package-lock.json
+npm install
+npm run build
+```
+
+---
+
+## 📄 License
+
+This project is part of the ML Spot Optimizer platform.
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Commit changes: `git commit -m 'Add my feature'`
+4. Push to branch: `git push origin feature/my-feature`
+5. Open a Pull Request
+
+---
+
+## 💡 Tips
+
+- Use the browser DevTools React extension for debugging
+- Check the Network tab to inspect API calls
+- Use the Console for error messages
+- Hot Module Replacement (HMR) works automatically in dev mode
+
+---
+
+## 📧 Support
+
+For issues or questions:
+- Open an issue on GitHub
+- Check existing issues for solutions
+- Review the API integration section
+
+---
+
+**Built with ❤️ using React, Vite, and Tailwind CSS**
+
+---
+
+## 🎯 Next Steps
+
+1. **Configure Backend URL** - Edit `src/services/api.js`
+2. **Install Dependencies** - Run `npm install`
+3. **Start Dev Server** - Run `npm run dev`
+4. **Customize Branding** - Update colors in `tailwind.config.js`
+5. **Deploy** - Build and deploy to your hosting platform
+
+Happy coding! 🚀
