@@ -220,7 +220,23 @@ cat > start_backend.sh << 'EOF'
 #!/bin/bash
 cd /home/ubuntu/ml-spot-optimizer/backend
 source venv/bin/activate
-export $(grep -v '^#' .env | xargs)
+
+# Load environment variables from .env file
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+    echo "Environment variables loaded from .env"
+else
+    echo "Warning: .env file not found"
+fi
+
+# Log startup info
+echo "Starting Spot Optimizer Backend v3.0.0"
+echo "Region: $AWS_REGION"
+echo "Decision Engine: $DECISION_ENGINE_TYPE"
+echo "Model Directory: $MODEL_DIR"
+
 exec gunicorn \
     --bind 0.0.0.0:5000 \
     --workers 4 \
