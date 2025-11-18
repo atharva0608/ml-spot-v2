@@ -73,60 +73,48 @@ const HomeDashboard = () => {
   return (
     <div className="p-6 space-y-6 bg-gray-50 min-h-screen">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-gray-900">Global Admin Dashboard</h2>
-          <p className="text-gray-600 mt-1">Overview of all clients and system performance</p>
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Global Admin Dashboard</h2>
+          <p className="text-sm md:text-base text-gray-600 mt-1">Overview of all clients and system performance</p>
         </div>
         <button
           onClick={loadStats}
           disabled={refreshing}
-          className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          <span>Refresh</span>
+          <span className="font-medium">Refresh</span>
         </button>
       </div>
 
       {/* Summary Cards */}
-      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-200">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <Server className="w-6 h-6 text-blue-600" />
-            </div>
-            <p className="text-sm text-gray-600 font-medium">Total Agents</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{totals.agents}</p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <Cpu className="w-6 h-6 text-green-600" />
-            </div>
-            <p className="text-sm text-gray-600 font-medium">Total Instances</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{totals.instances}</p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <Users className="w-6 h-6 text-purple-600" />
-            </div>
-            <p className="text-sm text-gray-600 font-medium">Total Clients</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{totals.clients}</p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <DollarSign className="w-6 h-6 text-green-600" />
-            </div>
-            <p className="text-sm text-gray-600 font-medium">Total Savings</p>
-            <p className="text-3xl font-bold text-green-600 mt-1">
-              ${totals.savings?.toFixed(2) || '0.00'}
-            </p>
-          </div>
-          <div className="text-center">
-            <div className="flex items-center justify-center mb-2">
-              <Zap className="w-6 h-6 text-yellow-600" />
-            </div>
-            <p className="text-sm text-gray-600 font-medium">Switches (24h)</p>
-            <p className="text-3xl font-bold text-blue-600 mt-1">{switches?.total_24h || 0}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
+        <StatCard
+          icon={<Server className="w-6 h-6" />}
+          title="Total Agents"
+          value={totals.agents}
+        />
+        <StatCard
+          icon={<Cpu className="w-6 h-6" />}
+          title="Total Instances"
+          value={totals.instances}
+        />
+        <StatCard
+          icon={<Users className="w-6 h-6" />}
+          title="Total Clients"
+          value={totals.clients}
+        />
+        <StatCard
+          icon={<DollarSign className="w-6 h-6" />}
+          title="Total Savings"
+          value={`$${totals.savings?.toFixed(2) || '0.00'}`}
+        />
+        <StatCard
+          icon={<Zap className="w-6 h-6" />}
+          title="Switches (24h)"
+          value={switches?.total_24h || 0}
+          subtitle={
             <div className="flex items-center justify-center space-x-2 mt-2">
               <StatusBadge
                 status={system_health?.database === 'online' ? 'online' : 'offline'}
@@ -137,39 +125,35 @@ const HomeDashboard = () => {
                 label="API"
               />
             </div>
-          </div>
-        </div>
+          }
+        />
       </div>
 
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          icon={Zap}
+          icon={<Zap className="w-6 h-6" />}
           title="Manual Switches (Today)"
           value={switches?.manual_today || 0}
           subtitle="User-initiated switches"
-          color="#3b82f6"
         />
         <StatCard
-          icon={Activity}
+          icon={<Activity className="w-6 h-6" />}
           title="Model Switches (Today)"
           value={switches?.model_today || 0}
           subtitle="AI-recommended switches"
-          color="#8b5cf6"
         />
         <StatCard
-          icon={TrendingUp}
+          icon={<TrendingUp className="w-6 h-6" />}
           title="Top Client"
           value={top_client?.name || 'N/A'}
           subtitle={top_client ? `$${top_client.savings?.toFixed(2)} saved` : ''}
-          color="#10b981"
         />
         <StatCard
-          icon={DollarSign}
+          icon={<DollarSign className="w-6 h-6" />}
           title="Monthly Projection"
           value={monthly_projection ? `$${monthly_projection.toFixed(2)}` : 'N/A'}
           subtitle="Estimated total savings"
-          color="#f59e0b"
         />
       </div>
 
