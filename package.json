@@ -3,6 +3,7 @@
   "version": "3.0.0",
   "description": "Advanced frontend for ML Spot Optimizer - AI-powered EC2 spot instance cost optimization",
   "private": true,
+  "type": "module",
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
